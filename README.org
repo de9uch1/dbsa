@@ -1,0 +1,48 @@
+* Dependency-Based Self-Attention for Transformer NMT (Deguchi et al., 2019)
+** Install
+#+BEGIN_SRC bash
+  git clone -b return_self_attn https://github.com/de9uch1/fairseq.git
+  cd fairseq/
+  pip install -e ./
+#+END_SRC
+
+** Training a Transformer + DBSA model on KFTT
+*** 1. Extract and preprocess the KFTT data (including dependency parsing)
+#+BEGIN_SRC bash
+  bash scripts/exprepare-kftt.sh
+#+END_SRC
+
+*** 2. Preprocess the dataset
+#+BEGIN_SRC bash
+  # binarize the dataset
+  fairseq-preprocess --source-lang ja --target-lang en \
+      --trainpref kftt/train \
+      --validpref kftt/valid \
+      --testpref kftt/test \
+      --destdir data-bin/ \
+      --workers 16
+
+  # deploy the dependency labels
+  for split in train valid test; do
+      for l in ja en; do
+          cp kftt/$split.$l.dep data-bin/$split.dep.$l
+      done
+  done
+#+END_SRC
+
+*** 3. Train a model
+#+BEGIN_SRC bash
+  fairseq-train \
+      data-bin/ \
+      --user-dir dbsa/ \
+      --task translation_dep \
+      --arch transformer_dep \
+      --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 --activation-fn relu \
+      --lr 5e-4 --lr-scheduler inverse_sqrt --warmup-updates 4000 --warmup-init-lr 1e-7 \
+      --dropout 0.1 --attention-dropout 0.1 --activation-dropout 0.1 --weight-decay 0.0 \
+      --max-tokens 6000 --label-smoothing 0.1 \
+      --save-dir ./checkpoints --log-interval 100 --max-update 60000 \
+      --keep-interval-updates -1 --save-interval-updates 0 \
+      --load-dependency --criterion label_smoothed_cross_entropy_with_dependency \
+      --fp16
+#+END_SRC
