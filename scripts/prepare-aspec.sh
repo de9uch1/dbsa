@@ -60,6 +60,7 @@ BPEROOT=$TOOLS_DIR/fastBPE
 FASTBPE=$BPEROOT/fast
 EDA=$TOOLS_DIR/eda/eda
 EDA_MODEL=$TOOLS_DIR/eda/fullmodel.etm
+CONLLU2HEADS=$TOOLS_DIR/dnlp/tools/conllu2heads.py
 STANZA=$TOOLS_DIR/dnlp/tools/stanza_cli.py
 BPE_DEP=$(dirname $0)/bpe_dependency.py
 
@@ -151,6 +152,7 @@ OUTDIR=aspec_ja_en
 prep=$OUTDIR
 tmp=$prep/tmp
 orig=$prep/orig
+valid_set=dev
 
 mkdir -p $prep $orig $tmp
 cat $ASPEC_JE/train/train-{1,2,3}.txt | head -n $train_size > $orig/train.txt
@@ -161,7 +163,7 @@ cp $ASPEC_JE/test/test.txt $orig/test.txt
 set -e
 echo "===> Start preprocessing"
 echo "====> Extracting sentences..."
-for split in dev test; do
+for split in dev devtest test; do
     perl -ne 'chomp; @a=split/ \|\|\| /; print $a[2], "\n";' < $orig/$split.txt > $orig/$split.ja
     perl -ne 'chomp; @a=split/ \|\|\| /; print $a[3], "\n";' < $orig/$split.txt > $orig/$split.en
 done
@@ -172,15 +174,21 @@ done
 echo "Done."
 
 echo "====> Removing date expressions at EOS in Japanese in the training and development data to reduce noise..."
-for split in train dev; do
+for split in train dev devtest; do
     mv $orig/$split.ja $orig/$split.ja.org
     cat $orig/$split.ja.org | perl -C -pe 'use utf8; s/(.)［[０-９．]+］$/$1/;' > $orig/$split.ja
     rm $orig/$split.ja.org
 done
 echo "Done."
 
+pushd $orig >/dev/null
+for l in $src $tgt; do
+    ln -sf $valid_set.$l valid.$l
+done
+popd >/dev/null
+
 echo "====> Tokenizing sentences in Japanese..."
-for split in train dev test; do
+for split in train valid test; do
     cat $orig/$split.ja | \
         perl -C -pe 'use utf8; tr/\|[]/｜［］/; ' | \
         $PARALLEL $KYTEA_TOKENIZER | \
@@ -193,11 +201,12 @@ done
 echo "Done."
 
 echo "====> Tokenizing sentences in English..."
-for split in train dev test; do
+for split in train valid test; do
     cat $orig/$split.en | \
         perl -C $Z2H | \
         perl -C $NORM_PUNC -l en | \
-        perl -C $MOSES_TOKENIZER -threads $NUM_WORKERS -l en -a -no-escape \
+        perl -C $MOSES_TOKENIZER -threads $NUM_WORKERS -l en -a -no-escape 2>/dev/null | \
+        perl -C -pe 'use utf8; s/^ +//; s/ +$//; s/ +/ /g;' \
              > $tmp/$split.en
 done
 echo "Done."
@@ -210,7 +219,6 @@ for L in $src $tgt; do
 done
 mv $tmp/train.clean.ja.kytea $tmp/train.ja.kytea
 echo "Done."
-
 
 echo "====> Learn BPE on $tmp/train.$src, $tmp/train.$tgt..."
 BPE_CODE=$prep/code
@@ -225,7 +233,7 @@ echo "Done."
 echo "====> Apply BPE..."
 for l in $src $tgt; do
     BPE_VOCAB=$prep/vocab.$l
-    for split in train dev test; do
+    for split in train valid test; do
         f=$split.$l
         echo "apply BPE to $f..."
         $FASTBPE applybpe $prep/$f $tmp/$f $BPE_CODE.$l $prep/vocab.$l
@@ -247,10 +255,8 @@ for split in train valid test; do
     mv $tmp/$f.kytea.clean $tmp/$f.kytea
     cat $tmp/$f.kytea | \
         $PARALLEL $EDA -i kytea -o conll -m $EDA_MODEL | \
-        cut -d ' ' -f 7 | \
-        perl -pe 's/-1/0/g; s/([0-9])\n/$1 /g' | \
-        perl -pe 's/ $//g' \
-             > $tmp/$f.dep
+        $CONLLU2HEADS --split-fwspace \
+                      > $tmp/$f.dep
     python $BPE_DEP -t $prep/$f < $tmp/$f.dep > $prep/$f.dep
 done
 echo "Done."
@@ -259,7 +265,7 @@ echo "====> Parsing dependency structures in English..."
 for split in train valid test; do
     f=$split.en
     cat $tmp/$f | \
-        $PARALLEL_GPU python $STANZA --depparse -l en --batch-size 20000 > $tmp/$f.dep
+        python $STANZA --depparse -l en --batch-size 10000 > $tmp/$f.dep
     python $BPE_DEP -t $prep/$f < $tmp/$f.dep > $prep/$f.dep
 done
 echo "Done."

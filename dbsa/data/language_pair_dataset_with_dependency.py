@@ -34,13 +34,6 @@ def collate(
             pad_to_length=pad_to_length,
         )
 
-    def merge_dep(key, left_pad, move_eos_to_beginning=False, pad_to_length=None):
-        return data_utils.collate_tokens(
-            [s[key] for s in samples],
-            -1, eos_idx, left_pad, move_eos_to_beginning,
-            pad_to_length=pad_to_length,
-        )
-
     def check_alignment(alignment, src_len, tgt_len):
         if alignment is None or len(alignment) == 0:
             return False
@@ -62,6 +55,14 @@ def collate(
         _, align_tgt_i, align_tgt_c = torch.unique(align_tgt, return_inverse=True, return_counts=True)
         align_weights = align_tgt_c[align_tgt_i[np.arange(len(align_tgt))]]
         return 1. / align_weights.float()
+
+    def check_dependency(dependency, seq_len):
+        if dependency is None or len(dependency) == 0:
+            return False
+        if dependency[:, 0].max().item() >= seq_len - 1 or dependency[:, 1].max().item() >= seq_len - 1:
+            logger.warning("dependency size mismatch found, skipping dependency!")
+            return False
+        return True
 
     id = torch.LongTensor([s['id'] for s in samples])
     src_tokens = merge(
@@ -151,24 +152,43 @@ def collate(
             constraints[i, 0:lens[i]] = samples[i].get("constraints")
         batch["constraints"] = constraints
 
-    if samples[0].get("src_dep", None) is not None:
-        src_dep = merge_dep(
-            "src_dep", left_pad=left_pad_source,
-            pad_to_length=pad_to_length["source"] if pad_to_length is not None else None,
-        )
-        src_dep = src_dep.index_select(0, sort_order)
-        batch["src_dep"] = src_dep
+    if samples[0].get('src_dep', None) is not None:
+        bsz, src_sz = batch['net_input']['src_tokens'].shape
 
-    if samples[0].get("tgt_dep", None) is not None:
-        tgt_dep = merge_dep(
-            "tgt_dep", left_pad=left_pad_target,
-            pad_to_length=pad_to_length["target"] if pad_to_length is not None else None,
-        )
-        tgt_dep = tgt_dep.index_select(0, sort_order)
-        bsz, tgt_sz = tgt_dep.shape
-        future_mask = tgt_dep > torch.arange(tgt_sz).expand_as(tgt_dep)
-        tgt_dep[future_mask] = -1
-        batch["tgt_dep"] = tgt_dep
+        offsets = torch.zeros((len(sort_order), 2), dtype=torch.long)
+        offsets[:, 0] += (torch.arange(len(sort_order), dtype=torch.long) * src_sz)
+        if left_pad_source:
+            offsets += (src_sz - src_lengths)[:, None]
+
+        source_dependency = [
+            dependency + offset
+            for dep_idx, offset, src_len in zip(sort_order, offsets, src_lengths)
+            for dependency in [samples[dep_idx]['src_dep'].view(-1, 2)]
+            if check_dependency(dependency, src_len)
+        ]
+
+        if len(source_dependency) > 0:
+            source_dependency = torch.cat(source_dependency, dim=0)
+            batch['src_dep'] = source_dependency
+
+    if samples[0].get('tgt_dep', None) is not None:
+        bsz, tgt_sz = batch['target'].shape
+
+        offsets = torch.zeros((len(sort_order), 2), dtype=torch.long)
+        offsets[:, 0] += (torch.arange(len(sort_order), dtype=torch.long) * tgt_sz)
+        if left_pad_target:
+            offsets += (tgt_sz - tgt_lengths)[:, None]
+
+        target_dependency = [
+            dependency[dependency[:, 0] >= dependency[:, 1], :] + offset
+            for dep_idx, offset, tgt_len in zip(sort_order, offsets, tgt_lengths)
+            for dependency in [samples[dep_idx]['tgt_dep'].view(-1, 2)]
+            if check_dependency(dependency, tgt_len)
+        ]
+
+        if len(target_dependency) > 0:
+            target_dependency = torch.cat(target_dependency, dim=0)
+            batch['tgt_dep'] = target_dependency
 
     return batch
 

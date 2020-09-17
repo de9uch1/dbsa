@@ -44,5 +44,13 @@
       --save-dir ./checkpoints --log-interval 100 --max-update 60000 \
       --keep-interval-updates -1 --save-interval-updates 0 \
       --load-dependency --criterion label_smoothed_cross_entropy_with_dependency \
+      --source-dependency-lambda 0.5 --target-dependency-lambda 0.5 \
       --fp16
+#+END_SRC
+*** 4. Evaluate and generate the translations
+#+BEGIN_SRC bash
+  fairseq-generate \
+      data-bin --gen-subset test \
+      --path checkpoints/checkpoint_last.pt \
+      --beam 4 --nbest 1
 #+END_SRC

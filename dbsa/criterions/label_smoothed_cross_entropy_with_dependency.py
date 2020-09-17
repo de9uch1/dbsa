@@ -57,8 +57,10 @@ class LabelSmoothedCrossEntropyCriterionWithDependency(LabelSmoothedCrossEntropy
         # Compute dependency loss only for training set and non dummy batches.
         if 'src_dep' in sample and sample['src_dep'] is not None:
             source_dependency_loss = self.compute_dependency_loss(sample, net_output, target=False)
+            source_dependency_loss *= sample_size / sample['src_dep'].size(0)
         if 'tgt_dep' in sample and sample['tgt_dep'] is not None:
             target_dependency_loss = self.compute_dependency_loss(sample, net_output, target=True)
+            target_dependency_loss *= sample_size / sample['tgt_dep'].size(0)
 
         if source_dependency_loss is not None:
             logging_output['src_dep_loss'] = utils.item(source_dependency_loss.data)
@@ -70,19 +72,15 @@ class LabelSmoothedCrossEntropyCriterionWithDependency(LabelSmoothedCrossEntropy
         return loss, sample_size, logging_output
 
     def compute_dependency_loss(self, sample, net_output, target=False):
-        attn_probs = net_output[1]['decoder_self_attn'][:, :-1, :-1] if target else net_output[1]['encoder_self_attn']
+        attn_probs = net_output[1]['decoder_self_attn'] if target else net_output[1]['encoder_self_attn']
         bsz, seq_len, _ = attn_probs.shape
-        attn_probs = attn_probs.contiguous().view(bsz * seq_len, seq_len).float()
+        attn = attn_probs.view(bsz * seq_len, seq_len)
 
         dep = sample['tgt_dep'] if target else sample['src_dep']
 
         if len(dep) > 0:
             # Dependency loss computation.
-            dep = dep.view(-1, 1)
-            non_pad_mask = dep.ge(0)
-            dep[~non_pad_mask] = 0
-            loss = - (attn_probs.gather(dim=-1, index=dep)[non_pad_mask]).log()
-            loss = loss.sum()
+            loss = -((attn[dep[:, 0][:, None], dep[:, 1][:, None]]).log()).sum()
         else:
             return None
 

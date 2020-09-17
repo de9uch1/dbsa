@@ -133,7 +133,7 @@ def load_langpair_dataset(
             with open(src_dep_path, 'r') as src_dep_data:
                 for h in src_dep_data:
                     src_deps.append(
-                        torch.LongTensor([int(x) - 1 for x in h.strip().split()])
+                        torch.LongTensor([[i, int(x) - 1] for i, x in enumerate(h.strip().split())])
                     )
             src_dep = RawLabelDataset(src_deps)
         if os.path.exists(tgt_dep_path):
@@ -141,7 +141,7 @@ def load_langpair_dataset(
             with open(tgt_dep_path, 'r') as tgt_dep_data:
                 for h in tgt_dep_data:
                     tgt_deps.append(
-                        torch.LongTensor([int(x) - 1 for x in h.strip().split()])
+                        torch.LongTensor([[i, int(x) - 1] for i, x in enumerate(h.strip().split())])
                     )
             tgt_dep = RawLabelDataset(tgt_deps)
 
@@ -151,7 +151,6 @@ def load_langpair_dataset(
         tgt_dataset, tgt_dataset_sizes, tgt_dict,
         left_pad_source=left_pad_source,
         left_pad_target=left_pad_target,
-        remove_eos_from_source=True,
         align_dataset=align_dataset, eos=eos,
         src_dep=src_dep,
         tgt_dep=tgt_dep,

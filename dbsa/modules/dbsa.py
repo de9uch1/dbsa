@@ -8,6 +8,7 @@ from typing import Dict, Optional, Tuple
 
 import torch
 from torch import Tensor, nn
+import torch.nn.functional as F
 
 from fairseq import utils
 from fairseq.incremental_decoding_utils import with_incremental_state, FairseqIncrementalState
@@ -54,13 +55,14 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
         )
         self.dep_heads = dependency_heads
         self.dep_dim = self.head_dim * self.dep_heads
-        self.biaffine = nn.Linear(self.dep_dim, self.dep_dim, bias=True)
+        self.weight_biaffine = nn.Parameter(torch.Tensor(self.dep_dim, self.dep_dim))
+        self.bias_biaffine = nn.Parameter(torch.Tensor(self.dep_dim))
         self.reset_parameters_biaffine()
 
     def reset_parameters_biaffine(self):
-        nn.init.xavier_uniform_(self.biaffine.weight, gain=1 / math.sqrt(2))
-        if self.biaffine.bias is not None:
-            nn.init.constant_(self.biaffine.bias, 0.)
+        nn.init.xavier_uniform_(self.weight_biaffine, gain=1 / math.sqrt(2))
+        if self.bias_biaffine is not None:
+            nn.init.constant_(self.bias_biaffine, 0.)
 
     def forward(
         self,
@@ -132,7 +134,14 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
         q *= self.scaling
 
         # Biaffine operation
-        q[:, :, :self.dep_dim] = self.biaffine(q[:, :, :self.dep_dim])
+        q[:, :, :self.dep_dim] = F.linear(q[:, :, :self.dep_dim], self.weight_biaffine)
+        bias_biaffine = F.linear(k[:, :, :self.dep_dim], self.bias_biaffine)
+        bias_biaffine = (
+            bias_biaffine.contiguous()
+            .view(-1, bsz)
+            .transpose(0, 1)
+            .unsqueeze(1).unsqueeze(2)
+        )
 
         if self.bias_k is not None:
             assert self.bias_v is not None
@@ -240,6 +249,12 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
                 )
 
         attn_weights = torch.bmm(q, k.transpose(1, 2))
+
+        # DBSA's biaffine operation (bias term)
+        attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
+        attn_weights[:, :self.dep_heads, :, :] += bias_biaffine
+        attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
+
         attn_weights = MultiheadAttention.apply_sparse_mask(attn_weights, tgt_len, src_len, bsz)
 
         assert list(attn_weights.size()) == [bsz * self.num_heads, tgt_len, src_len]
