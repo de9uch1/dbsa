@@ -1,31 +1,40 @@
 * Dependency-Based Self-Attention for Transformer NMT (Deguchi et al., 2019)
 ** Install
+- for poetry users:
 #+BEGIN_SRC bash
-  git clone -b return_self_attn https://github.com/de9uch1/fairseq.git
-  cd fairseq/
-  pip install -e ./
+  git clone https://github.com/de9uch1/dbsa.git
+  cd dbsa/
+  poetry install
 #+END_SRC
 
-** Training a Transformer + DBSA model on KFTT
-*** 1. Extract and preprocess the KFTT data (including dependency parsing)
+- for pip users:
 #+BEGIN_SRC bash
-  bash scripts/exprepare-kftt.sh
+  git clone https://github.com/de9uch1/dbsa.git
+  cd dbsa/
+  pip install ./
+#+END_SRC
+
+** Training a Transformer + DBSA model on ASPEC-JE
+*** 1. Extract and preprocess the ASPEC-JE data (including dependency parsing)
+#+BEGIN_SRC bash
+  export NUM_WORKERS=8  # specify the number of CPUs
+  bash scripts/prepare-aspec.sh
 #+END_SRC
 
 *** 2. Preprocess the dataset
 #+BEGIN_SRC bash
   # binarize the dataset
   fairseq-preprocess --source-lang ja --target-lang en \
-      --trainpref kftt/train \
-      --validpref kftt/valid \
-      --testpref kftt/test \
+      --trainpref aspec_ja_en/train \
+      --validpref aspec_ja_en/valid \
+      --testpref aspec_ja_en/test \
       --destdir data-bin/ \
-      --workers 16
+      --workers $NUM_WORKERS
 
   # deploy the dependency labels
   for split in train valid test; do
       for l in ja en; do
-          cp kftt/$split.$l.dep data-bin/$split.dep.$l
+          cp aspec_ja_en/$split.$l.dep data-bin/$split.dep.$l
       done
   done
 #+END_SRC
@@ -38,13 +47,14 @@
       --task translation_dep \
       --arch transformer_dep \
       --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 --activation-fn relu \
-      --lr 5e-4 --lr-scheduler inverse_sqrt --warmup-updates 4000 --warmup-init-lr 1e-7 \
+      --lr 7e-4 --lr-scheduler inverse_sqrt --warmup-updates 4000 --warmup-init-lr 1e-7 \
       --dropout 0.1 --attention-dropout 0.1 --activation-dropout 0.1 --weight-decay 0.0 \
-      --max-tokens 6000 --label-smoothing 0.1 \
-      --save-dir ./checkpoints --log-interval 100 --max-update 60000 \
+      --max-tokens 12000 --label-smoothing 0.1 \
+      --save-dir ./checkpoints --log-interval 100 --max-update 100000 \
       --keep-interval-updates -1 --save-interval-updates 0 \
       --load-dependency --criterion label_smoothed_cross_entropy_with_dependency \
       --source-dependency-lambda 0.5 --target-dependency-lambda 0.5 \
+      --dependency-layer 2 \
       --fp16
 #+END_SRC
 *** 4. Evaluate and generate the translations
