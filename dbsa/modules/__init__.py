@@ -4,3 +4,4 @@
 # LICENSE file in the root directory of this source tree.
 
 from .dbsa import DependencyBasedSelfAttention
+from .transformer_layer import TransformerDependencyEncoderLayer

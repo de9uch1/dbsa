@@ -76,6 +76,7 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
         attn_mask: Optional[Tensor] = None,
         before_softmax: bool = False,
         need_head_weights: bool = True,
+        gold_dependency: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
 
@@ -134,14 +135,15 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
         q *= self.scaling
 
         # Biaffine operation
-        q[:, :, :self.dep_dim] = F.linear(q[:, :, :self.dep_dim], self.weight_biaffine)
-        bias_biaffine = F.linear(k[:, :, :self.dep_dim], self.bias_biaffine)
-        bias_biaffine = (
-            bias_biaffine.contiguous()
-            .view(-1, bsz)
-            .transpose(0, 1)
-            .unsqueeze(1).unsqueeze(2)
-        )
+        if gold_dependency is None:
+            q[:, :, :self.dep_dim] = F.linear(q[:, :, :self.dep_dim], self.weight_biaffine)
+            bias_biaffine = F.linear(k[:, :, :self.dep_dim], self.bias_biaffine)
+            bias_biaffine = (
+                bias_biaffine.contiguous()
+                .view(-1, bsz)
+                .transpose(0, 1)
+                .unsqueeze(1).unsqueeze(2)
+            )
 
         if self.bias_k is not None:
             assert self.bias_v is not None
@@ -251,9 +253,10 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
         attn_weights = torch.bmm(q, k.transpose(1, 2))
 
         # DBSA's biaffine operation (bias term)
-        attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
-        attn_weights[:, :self.dep_heads, :, :] += bias_biaffine
-        attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
+        if gold_dependency is None:
+            attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
+            attn_weights[:, :self.dep_heads, :, :] += bias_biaffine
+            attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
 
         attn_weights = MultiheadAttention.apply_sparse_mask(attn_weights, tgt_len, src_len, bsz)
 
@@ -281,6 +284,19 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
 
         if before_softmax:
             return attn_weights, v
+
+        # gold dependency
+        if gold_dependency is not None:
+            attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
+            dep_heads = (
+                attn_weights[:, :self.dep_heads]
+                .transpose(0, 1)
+                .contiguous()
+                .view(self.dep_heads, bsz * tgt_len, src_len)
+            )
+            dep_heads[:, gold_dependency[:, 0][:, None], gold_dependency[:, 1][:, None]] = float("inf")
+            dep_heads = dep_heads.view(self.dep_heads, bsz, tgt_len, src_len).transpose(0, 1)
+            attn_weights[:, :self.dep_heads] = dep_heads
 
         attn_weights_float = utils.softmax(
             attn_weights, dim=-1, onnx_trace=self.onnx_trace

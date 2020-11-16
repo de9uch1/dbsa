@@ -170,6 +170,8 @@ def collate(
         if len(source_dependency) > 0:
             source_dependency = torch.cat(source_dependency, dim=0)
             batch['src_dep'] = source_dependency
+            if self.gold_dependency:
+                batch['net_input']['src_deps'] = source_dependency
 
     if samples[0].get('tgt_dep', None) is not None:
         bsz, tgt_sz = batch['target'].shape
@@ -244,6 +246,7 @@ class LanguagePairDatasetWithDependency(LanguagePairDataset):
         remove_eos_from_source=False, append_eos_to_target=False,
         align_dataset=None,
         src_dep=None, tgt_dep=None,
+        gold_dependency=False,
         constraints=None,
         append_bos=False, eos=None,
         num_buckets=0,
@@ -265,6 +268,7 @@ class LanguagePairDatasetWithDependency(LanguagePairDataset):
         )
         self.src_dep = src_dep
         self.tgt_dep = tgt_dep
+        self.gold_dependency = gold_dependency
 
     def __getitem__(self, index):
         example = super().__getitem__(index)

@@ -10,7 +10,7 @@ from fairseq.models.transformer import (
     TransformerModel,
 )
 
-from dbsa.modules import DependencyBasedSelfAttention
+from dbsa.modules import DependencyBasedSelfAttention, TransformerDependencyEncoderLayer
 
 
 @register_model("transformer_dep")
@@ -45,15 +45,7 @@ class TransformerDepModel(TransformerModel):
 
         dep_layer = getattr(args, "dependency_layer", 0)
         if args.dependency_layer >= 0:
-            encoder.layers[dep_layer].self_attn = DependencyBasedSelfAttention(
-                encoder.layers[dep_layer].embed_dim,
-                args.encoder_attention_heads,
-                dropout=args.attention_dropout,
-                self_attention=True,
-                q_noise=encoder.layers[dep_layer].quant_noise,
-                qn_block_size=encoder.layers[dep_layer].quant_noise_block_size,
-                dependency_heads=args.dependency_heads,
-            )
+            encoder.layers[dep_layer] = TransformerDependencyEncoderLayer(args)
             decoder.layers[dep_layer].self_attn = DependencyBasedSelfAttention(
                 decoder.layers[dep_layer].embed_dim,
                 args.decoder_attention_heads,
@@ -66,8 +58,10 @@ class TransformerDepModel(TransformerModel):
 
         return TransformerDepModel(encoder, decoder, args)
 
-    def forward(self, src_tokens, src_lengths, prev_output_tokens):
-        encoder_out = self.encoder(src_tokens, src_lengths, return_all_attn=True)
+    def forward(self, src_tokens, src_lengths, prev_output_tokens, **kwargs):
+        src_deps = kwargs.get('src_deps', None)
+
+        encoder_out = self.encoder(src_tokens, src_lengths, return_all_attn=True, src_deps=src_deps)
         decoder_out, decoder_attn = self.decoder(prev_output_tokens, encoder_out, return_all_self_attn=True)
         dep_layer, dep_heads = self.dependency_layer, self.dependency_heads
         encoder_self_attn = encoder_out.encoder_attn[dep_layer][:dep_heads].mean(dim=0)

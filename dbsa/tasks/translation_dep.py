@@ -42,7 +42,7 @@ def load_langpair_dataset(
     combine, dataset_impl, upsample_primary,
     left_pad_source, left_pad_target, max_source_positions,
     max_target_positions, prepend_bos=False, load_alignments=False,
-    load_dependency=False,
+    load_dependency=False, gold_dependency=False,
     truncate_source=False, append_source_id=False,
     num_buckets=0,
     shuffle=True,
@@ -154,6 +154,7 @@ def load_langpair_dataset(
         align_dataset=align_dataset, eos=eos,
         src_dep=src_dep,
         tgt_dep=tgt_dep,
+        gold_dependency=gold_dependency,
         num_buckets=num_buckets,
         shuffle=shuffle,
     )
@@ -188,6 +189,8 @@ class TranslationDependencyTask(TranslationTask):
         TranslationTask.add_args(parser)
         parser.add_argument('--load-dependency', action='store_true',
                             help='load the dependency heads')
+        parser.add_argument('--use-gold-dependency', action='store_true',
+                            help='use the source\'s gold dependency for inference')
         # fmt: on
 
     def load_dataset(self, split, epoch=1, combine=False, **kwargs):
@@ -219,6 +222,7 @@ class TranslationDependencyTask(TranslationTask):
             max_target_positions=self.args.max_target_positions,
             load_alignments=self.args.load_alignments,
             load_dependency=self.args.load_dependency,
+            gold_dependency=self.args.use_gold_dependency,
             truncate_source=self.args.truncate_source,
             num_buckets=self.args.num_batch_buckets,
             shuffle=(split != 'test'),
