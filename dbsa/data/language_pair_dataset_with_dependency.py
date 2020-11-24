@@ -23,6 +23,7 @@ def collate(
     left_pad_target=False,
     input_feeding=True,
     pad_to_length=None,
+    gold_dependency=True,
 ):
     if len(samples) == 0:
         return {}
@@ -170,7 +171,7 @@ def collate(
         if len(source_dependency) > 0:
             source_dependency = torch.cat(source_dependency, dim=0)
             batch['src_dep'] = source_dependency
-            if self.gold_dependency:
+            if gold_dependency:
                 batch['net_input']['src_deps'] = source_dependency
 
     if samples[0].get('tgt_dep', None) is not None:
@@ -322,6 +323,7 @@ class LanguagePairDatasetWithDependency(LanguagePairDataset):
             left_pad_target=self.left_pad_target,
             input_feeding=self.input_feeding,
             pad_to_length=pad_to_length,
+            gold_dependency=self.gold_dependency,
         )
         if self.src_lang_id is not None or self.tgt_lang_id is not None:
             src_tokens = res['net_input']['src_tokens']

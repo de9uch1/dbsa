@@ -285,22 +285,28 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
         if before_softmax:
             return attn_weights, v
 
-        # gold dependency
-        if gold_dependency is not None:
-            attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
-            dep_heads = (
-                attn_weights[:, :self.dep_heads]
-                .transpose(0, 1)
-                .contiguous()
-                .view(self.dep_heads, bsz * tgt_len, src_len)
-            )
-            dep_heads[:, gold_dependency[:, 0][:, None], gold_dependency[:, 1][:, None]] = float("inf")
-            dep_heads = dep_heads.view(self.dep_heads, bsz, tgt_len, src_len).transpose(0, 1)
-            attn_weights[:, :self.dep_heads] = dep_heads
-
         attn_weights_float = utils.softmax(
             attn_weights, dim=-1, onnx_trace=self.onnx_trace
         )
+
+        # gold dependency
+        if gold_dependency is not None:
+            attn_weights_float = (
+                attn_weights_float.view(bsz, self.num_heads, tgt_len, src_len)
+                .transpose(0, 1)
+                .contiguous()
+                .view(self.num_heads, bsz * tgt_len, src_len)
+            )
+            attn_weights_float[:self.dep_heads] = 0
+            attn_weights_float[:self.dep_heads, gold_dependency[:, 0][:, None], gold_dependency[:, 1][:, None]] = 1
+
+            attn_weights_float = (
+                attn_weights_float.view(self.num_heads, bsz, tgt_len, src_len)
+                .transpose(0, 1)
+                .contiguous()
+                .view(bsz * self.num_heads, tgt_len, src_len)
+            )
+
         attn_weights = attn_weights_float.type_as(attn_weights)
         attn_probs = self.dropout_module(attn_weights)
 

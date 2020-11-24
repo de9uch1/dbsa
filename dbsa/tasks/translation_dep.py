@@ -43,7 +43,7 @@ def load_langpair_dataset(
     left_pad_source, left_pad_target, max_source_positions,
     max_target_positions, prepend_bos=False, load_alignments=False,
     load_dependency=False, gold_dependency=False,
-    truncate_source=False, append_source_id=False,
+    truncate_source=False, remove_eos_from_source=True, append_source_id=False,
     num_buckets=0,
     shuffle=True,
 ):
@@ -151,6 +151,7 @@ def load_langpair_dataset(
         tgt_dataset, tgt_dataset_sizes, tgt_dict,
         left_pad_source=left_pad_source,
         left_pad_target=left_pad_target,
+        remove_eos_from_source=remove_eos_from_source,
         align_dataset=align_dataset, eos=eos,
         src_dep=src_dep,
         tgt_dep=tgt_dep,
@@ -187,10 +188,14 @@ class TranslationDependencyTask(TranslationTask):
         """Add task-specific arguments to the parser."""
         # fmt: off
         TranslationTask.add_args(parser)
+        parser.add_argument('--remove-eos-from-source', action='store_true',
+                            help='if set, remove eos from end of source if it\'s present')
         parser.add_argument('--load-dependency', action='store_true',
                             help='load the dependency heads')
         parser.add_argument('--use-gold-dependency', action='store_true',
                             help='use the source\'s gold dependency for inference')
+        parser.add_argument('--print-dependency', action='store_true',
+                            help='if set, uses attention feedback to compute and print dependency')
         # fmt: on
 
     def load_dataset(self, split, epoch=1, combine=False, **kwargs):
@@ -199,6 +204,9 @@ class TranslationDependencyTask(TranslationTask):
         Args:
             split (str): name of the split (e.g., train, valid, test)
         """
+
+        if getattr(self.args, 'use_gold_dependency', False):
+            self.args.load_dependency = True
 
         super().load_dataset(split, epoch=epoch, combine=combine, **kwargs)
 
@@ -218,11 +226,12 @@ class TranslationDependencyTask(TranslationTask):
             upsample_primary=self.args.upsample_primary,
             left_pad_source=self.args.left_pad_source,
             left_pad_target=self.args.left_pad_target,
+            remove_eos_from_source=getattr(self.args, 'remove_eos_from_source', False),
             max_source_positions=self.args.max_source_positions,
             max_target_positions=self.args.max_target_positions,
             load_alignments=self.args.load_alignments,
             load_dependency=self.args.load_dependency,
-            gold_dependency=self.args.use_gold_dependency,
+            gold_dependency=getattr(self.args, 'use_gold_dependency', False),
             truncate_source=self.args.truncate_source,
             num_buckets=self.args.num_batch_buckets,
             shuffle=(split != 'test'),
@@ -235,20 +244,12 @@ class TranslationDependencyTask(TranslationTask):
             constraints=constraints
         )
 
-    def build_model(self, args):
-        model = super().build_model(args)
-        if getattr(args, 'eval_bleu', False):
-            assert getattr(args, 'eval_bleu_detok', None) is not None, (
-                '--eval-bleu-detok is required if using --eval-bleu; '
-                'try --eval-bleu-detok=moses (or --eval-bleu-detok=space '
-                'to disable detokenization, e.g., when using sentencepiece)'
-            )
-            detok_args = json.loads(getattr(args, 'eval_bleu_detok_args', '{}') or '{}')
-            self.tokenizer = encoders.build_tokenizer(Namespace(
-                tokenizer=getattr(args, 'eval_bleu_detok', None),
-                **detok_args
-            ))
+    def build_generator(self, models, args):
+        from dbsa.sequence_generator import (
+            SequenceGeneratorWithAttention,
+        )
 
-            gen_args = json.loads(getattr(args, 'eval_bleu_args', '{}') or '{}')
-            self.sequence_generator = self.build_generator([model], Namespace(**gen_args))
-        return model
+        seq_gen_cls = None
+        if getattr(args, "print_dependency", False):
+            seq_gen_cls = SequenceGeneratorWithAttention
+        return super().build_generator(models, args, seq_gen_cls=seq_gen_cls)

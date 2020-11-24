@@ -61,6 +61,22 @@
 #+BEGIN_SRC bash
   fairseq-generate \
       data-bin --gen-subset test \
+      --user-dir dbsa/ \
+      --task translation_dep \
       --path checkpoints/checkpoint_last.pt \
+      --max-len-a 1 --max-len-b 50 \
+      --remove-bpe \
+      --beam 4 --nbest 1
+#+END_SRC
+
+- You can also generate dependencies (BPE level)
+#+BEGIN_SRC bash
+  python ./generate.py \
+      data-bin --gen-subset test \
+      --user-dir dbsa/ \
+      --task translation_dep \
+      --path checkpoints/checkpoint_last.pt \
+      --max-len-a 1 --max-len-b 50 \
+      --print-dependency \
       --beam 4 --nbest 1
 #+END_SRC
