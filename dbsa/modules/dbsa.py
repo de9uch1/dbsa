@@ -258,7 +258,7 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
             attn_weights[:, :self.dep_heads, :, :] += bias_biaffine
             attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
 
-        attn_weights = MultiheadAttention.apply_sparse_mask(attn_weights, tgt_len, src_len, bsz)
+        attn_weights = self.apply_sparse_mask(attn_weights, tgt_len, src_len, bsz)
 
         assert list(attn_weights.size()) == [bsz * self.num_heads, tgt_len, src_len]
 

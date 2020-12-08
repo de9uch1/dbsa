@@ -244,7 +244,7 @@ class TranslationDependencyTask(TranslationTask):
             constraints=constraints
         )
 
-    def build_generator(self, models, args):
+    def build_generator(self, models, args, seq_gen_cls=None, extra_gen_cls_kwargs=None):
         from dbsa.sequence_generator import (
             SequenceGeneratorWithAttention,
         )
@@ -252,4 +252,9 @@ class TranslationDependencyTask(TranslationTask):
         seq_gen_cls = None
         if getattr(args, "print_dependency", False):
             seq_gen_cls = SequenceGeneratorWithAttention
-        return super().build_generator(models, args, seq_gen_cls=seq_gen_cls)
+        return super().build_generator(
+            models,
+            args,
+            seq_gen_cls=seq_gen_cls,
+            extra_gen_cls_kwargs=extra_gen_cls_kwargs,
+        )

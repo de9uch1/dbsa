@@ -13,7 +13,6 @@ from fairseq.models.transformer import (
     transformer_wmt_en_de_big,
     TransformerModel,
     TransformerEncoder,
-    EncoderOut,
 )
 
 from dbsa.modules import DependencyBasedSelfAttention, TransformerDependencyEncoderLayer
@@ -71,12 +70,11 @@ class TransformerDepModel(TransformerModel):
 
     def forward(self, src_tokens, src_lengths, prev_output_tokens, **kwargs):
         src_deps = kwargs.get('src_deps', None)
-        dep_layer, dep_heads = self.dependency_layer, self.dependency_heads
 
         encoder_out = self.encoder(src_tokens, src_lengths, return_all_attn=True, src_deps=src_deps)
         decoder_out, decoder_attn = self.decoder(prev_output_tokens, encoder_out, return_all_self_attn=True)
-        encoder_self_attn = encoder_out.encoder_attn[dep_layer][:dep_heads].mean(dim=0)
-        decoder_self_attn = decoder_attn['self_attn'][dep_layer][:dep_heads].mean(dim=0)
+        encoder_self_attn = encoder_out['encoder_attn'][self.dependency_layer][:self.dependency_heads].mean(dim=0)
+        decoder_self_attn = decoder_attn['self_attn'][self.dependency_layer][:self.dependency_heads].mean(dim=0)
         dependency_out = {
             'encoder_self_attn': encoder_self_attn,
             'decoder_self_attn': decoder_self_attn,
@@ -138,8 +136,8 @@ class TransformerDependencyEncoder(TransformerEncoder):
         # compute padding mask
         encoder_padding_mask = src_tokens.eq(self.padding_idx)
 
-        encoder_states = [] if return_all_hiddens else None
-        encoder_attn = [] if return_all_attn else None
+        encoder_states = []
+        encoder_attn = []
 
         # encoder layers
         for i, layer in enumerate(self.layers):
@@ -160,15 +158,15 @@ class TransformerDependencyEncoder(TransformerEncoder):
         if self.layer_norm is not None:
             x = self.layer_norm(x)
 
-        return EncoderOut(
-            encoder_out=x,  # T x B x C
-            encoder_padding_mask=encoder_padding_mask,  # B x T
-            encoder_embedding=encoder_embedding,  # B x T x C
-            encoder_states=encoder_states,  # List[T x B x C]
-            encoder_attn=encoder_attn,  # List[N x B x T x T]
-            src_tokens=None,
-            src_lengths=None,
-        )
+        return {
+            "encoder_out": [x],  # T x B x C
+            "encoder_padding_mask": [encoder_padding_mask],  # B x T
+            "encoder_embedding": [encoder_embedding],  # B x T x C
+            "encoder_states": encoder_states,  # List[T x B x C]
+            "encoder_attn": encoder_attn,  # List[N x B x T x T]
+            "src_tokens": [],
+            "src_lengths": [],
+        }
 
 
 @register_model_architecture("transformer_dep", "transformer_dep")
