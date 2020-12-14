@@ -27,9 +27,9 @@ class LabelSmoothedCrossEntropyCriterionWithDependency(LabelSmoothedCrossEntropy
     def add_args(parser):
         """Add criterion-specific arguments to the parser."""
         LabelSmoothedCrossEntropyCriterion.add_args(parser)
-        parser.add_argument('--source-dependency-lambda', default=1.0, type=float, metavar='D',
+        parser.add_argument('--source-dependency-lambda', default=0.5, type=float, metavar='D',
                             help='weight for the source side dependency loss')
-        parser.add_argument('--target-dependency-lambda', default=1.0, type=float, metavar='D',
+        parser.add_argument('--target-dependency-lambda', default=0.5, type=float, metavar='D',
                             help='weight for the target side dependency loss')
 
     def forward(self, model, sample, reduce=True):

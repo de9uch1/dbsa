@@ -194,12 +194,12 @@ class TransformerDependencyEncoder(TransformerEncoder):
 @register_model_architecture("transformer_dep", "transformer_dep")
 def transformer_dep(args):
     args.dependency_heads = getattr(args, "dependency_heads", 1)
-    args.dependency_layer = getattr(args, "dependency_layer", 3)
+    args.dependency_layer = getattr(args, "dependency_layer", 0)
     base_architecture(args)
 
 
 @register_model_architecture("transformer_dep", "transformer_wmt_en_de_big_dep")
 def transformer_wmt_en_de_big_dep(args):
     args.dependency_heads = getattr(args, "dependency_heads", 1)
-    args.dependency_layer = getattr(args, "dependency_layer", 3)
+    args.dependency_layer = getattr(args, "dependency_layer", 0)
     transformer_wmt_en_de_big(args)
