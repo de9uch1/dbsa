@@ -250,7 +250,7 @@ class TranslationDependencyTask(TranslationTask):
         )
 
         seq_gen_cls = None
-        if getattr(args, "print_dependency", False):
+        if getattr(self.args, "print_dependency", False):
             seq_gen_cls = SequenceGeneratorWithAttention
         return super().build_generator(
             models,
