@@ -23,6 +23,7 @@ def collate(
     left_pad_target=False,
     input_feeding=True,
     pad_to_length=None,
+    remove_eos_from_source=False,
     gold_dependency=True,
 ):
     if len(samples) == 0:
@@ -38,6 +39,8 @@ def collate(
     def check_alignment(alignment, src_len, tgt_len):
         if alignment is None or len(alignment) == 0:
             return False
+        if remove_eos_from_source:
+            src_len += 1
         if alignment[:, 0].max().item() >= src_len - 1 or alignment[:, 1].max().item() >= tgt_len - 1:
             logger.warning("alignment size mismatch found, skipping alignment!")
             return False
@@ -165,7 +168,7 @@ def collate(
             dependency + offset
             for dep_idx, offset, src_len in zip(sort_order, offsets, src_lengths)
             for dependency in [samples[dep_idx]['src_dep'].view(-1, 2)]
-            if check_dependency(dependency, src_len)
+            if check_dependency(dependency, (src_len + 1 if remove_eos_from_source else src_len))
         ]
 
         if len(source_dependency) > 0:
@@ -323,6 +326,7 @@ class LanguagePairDatasetWithDependency(LanguagePairDataset):
             left_pad_target=self.left_pad_target,
             input_feeding=self.input_feeding,
             pad_to_length=pad_to_length,
+            remove_eos_from_source=self.remove_eos_from_source,
             gold_dependency=self.gold_dependency,
         )
         if self.src_lang_id is not None or self.tgt_lang_id is not None:
