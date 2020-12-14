@@ -299,7 +299,7 @@ def _main(cfg: DictConfig, output_file):
                         file=output_file,
                     )
 
-                    if cfg.generation.print_alignment:
+                    if cfg.generation.print_alignment == "hard":
                         print(
                             "A-{}\t{}".format(
                                 sample_id,
@@ -312,8 +312,21 @@ def _main(cfg: DictConfig, output_file):
                             ),
                             file=output_file,
                         )
+                    if cfg.generation.print_alignment == "soft":
+                        print(
+                            "A-{}\t{}".format(
+                                sample_id,
+                                " ".join(
+                                    [
+                                        ",".join(src_probs)
+                                        for src_probs in alignment
+                                    ]
+                                ),
+                            ),
+                            file=output_file,
+                        )
 
-                    if cfg.task.print_dependency:
+                    if cfg.task.print_dependency == "hard":
                         source_dependency = hypo.get('source_dependency', None)
                         target_dependency = hypo.get('target_dependency', None)
                         if source_dependency is not None:
@@ -337,6 +350,35 @@ def _main(cfg: DictConfig, output_file):
                                         [
                                             "{}".format(src_idx)
                                             for src_idx, tgt_idx in target_dependency
+                                        ]
+                                    ),
+                                ),
+                                file=output_file,
+                            )
+                    if cfg.task.print_dependency == "soft":
+                        source_dependency = hypo.get('source_dependency', None)
+                        target_dependency = hypo.get('target_dependency', None)
+                        if source_dependency is not None:
+                            print(
+                                "F-{}\t{}".format(
+                                    sample_id,
+                                    " ".join(
+                                        [
+                                            ",".join(probs)
+                                            for probs in source_dependency
+                                        ]
+                                    ),
+                                ),
+                                file=output_file,
+                            )
+                        if target_dependency is not None:
+                            print(
+                                "E-{}\t{}".format(
+                                    sample_id,
+                                    " ".join(
+                                        [
+                                            ",".join(probs)
+                                            for probs in target_dependency
                                         ]
                                     ),
                                 ),

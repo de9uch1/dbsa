@@ -12,7 +12,15 @@ from fairseq.sequence_generator import SequenceGenerator, EnsembleModel
 
 
 class SequenceGeneratorWithAttention(SequenceGenerator):
-    def __init__(self, models, tgt_dict, left_pad_target=False, **kwargs):
+    def __init__(
+        self,
+        models,
+        tgt_dict,
+        left_pad_target=False,
+        print_alignment="hard",
+        print_dependency="hard",
+        **kwargs,
+    ):
         """Generates translations of a given source sentence.
 
         Args:
@@ -23,6 +31,16 @@ class SequenceGeneratorWithAttention(SequenceGenerator):
         super().__init__(EnsembleModelWithAttention(models), tgt_dict, **kwargs)
         self.left_pad_target = left_pad_target
 
+        if print_alignment == "hard":
+            self.extract_alignment = utils.extract_hard_alignment
+        elif print_alignment == "soft":
+            self.extract_alignment = utils.extract_soft_alignment
+
+        if print_dependency == "hard":
+            self.extract_dependency = utils.extract_hard_alignment
+        elif print_dependency == "soft":
+            self.extract_dependency = utils.extract_soft_alignment
+
     @torch.no_grad()
     def generate(self, models, sample, **kwargs):
         finalized = super()._generate(sample, **kwargs)
@@ -30,18 +48,13 @@ class SequenceGeneratorWithAttention(SequenceGenerator):
         src_tokens = sample["net_input"]["src_tokens"]
         bsz = src_tokens.shape[0]
         beam_size = self.beam_size
-        src_tokens, src_lengths, prev_output_tokens, tgt_tokens = self._prepare_batch_for_alignment(
-            sample, finalized
-        )
-        net_input = sample["net_input"]
+        (
+            src_tokens,
+            src_lengths,
+            prev_output_tokens,
+            tgt_tokens
+        ) = self._prepare_batch_for_alignment(sample, finalized)
         attns = self.model.forward_attn(src_tokens, src_lengths, prev_output_tokens)
-        # if any(getattr(m, "full_context_alignment", False) for m in self.model.models):
-        #     attns = self.model.forward_align(src_tokens, src_lengths, prev_output_tokens)
-        # else:
-        #     attns = [
-        #         finalized[i // beam_size][i % beam_size]["attention"].transpose(1, 0)
-        #         for i in range(bsz * beam_size)
-        #     ]
 
         if src_tokens.device != "cpu":
             src_tokens = src_tokens.to('cpu')
@@ -52,20 +65,20 @@ class SequenceGeneratorWithAttention(SequenceGenerator):
             attns = attns_cpu
 
         # Process the attn matrix to extract hard alignments.
-        def extract_alignments(k, attn_q, attn_k, finalized_k):
+        def extract_alignments(extract, k, attn_q, attn_k, finalized_k):
             for i in range(bsz * beam_size):
-                alignment = utils.extract_hard_alignment(
+                alignment = extract(
                     attns[k][i], attn_k[i], attn_q[i], self.pad, self.eos
                 )
                 finalized[i // beam_size][i % beam_size][finalized_k] = alignment
 
         for k in attns:
             if k == 'align_attn':
-                extract_alignments(k, tgt_tokens, src_tokens, "alignment")
+                extract_alignments(self.extract_alignement, k, tgt_tokens, src_tokens, "alignment")
             elif k == 'encoder_self_attn':
-                extract_alignments(k, src_tokens, src_tokens, "source_dependency")
+                extract_alignments(self.extract_dependency, k, src_tokens, src_tokens, "source_dependency")
             elif k == 'decoder_self_attn':
-                extract_alignments(k, tgt_tokens, tgt_tokens, "target_dependency")
+                extract_alignments(self.extract_dependency, k, tgt_tokens, tgt_tokens, "target_dependency")
 
         return finalized
 

@@ -69,12 +69,31 @@ class TransformerDepModel(TransformerModel):
         return TransformerDepModel(encoder, decoder, args)
 
     def forward(self, src_tokens, src_lengths, prev_output_tokens, **kwargs):
-        src_deps = kwargs.get('src_deps', None)
-
-        encoder_out = self.encoder(src_tokens, src_lengths, return_all_attn=True, src_deps=src_deps)
-        decoder_out, decoder_attn = self.decoder(prev_output_tokens, encoder_out, return_all_self_attn=True)
-        encoder_self_attn = encoder_out['encoder_attn'][self.dependency_layer][:self.dependency_heads].mean(dim=0)
-        decoder_self_attn = decoder_attn['self_attn'][self.dependency_layer][:self.dependency_heads].mean(dim=0)
+        encoder_out = self.encoder(
+            src_tokens,
+            src_lengths,
+            return_all_attn=True,
+            src_deps=kwargs.get('src_deps', None),
+        )
+        decoder_out, decoder_attn = self.decoder(
+            prev_output_tokens,
+            encoder_out,
+            return_all_self_attn=True,
+        )
+        encoder_self_attn = (
+            encoder_out
+            ['encoder_attn']
+            [self.dependency_layer]
+            [:self.dependency_heads]
+            .mean(dim=0)
+        )
+        decoder_self_attn = (
+            decoder_attn
+            ['self_attn']
+            [self.dependency_layer]
+            [:self.dependency_heads]
+            .mean(dim=0)
+        )
         dependency_out = {
             'encoder_self_attn': encoder_self_attn,
             'decoder_self_attn': decoder_self_attn,
@@ -99,6 +118,7 @@ class TransformerDependencyEncoder(TransformerEncoder):
         src_lengths,
         return_all_hiddens: bool = False,
         return_all_attn: bool = False,
+        token_embeddings: Optional[Tensor] = None,
         src_deps: Optional[Tensor] = None,
         dependency_layer: int = 0,
     ):
@@ -112,6 +132,8 @@ class TransformerDependencyEncoder(TransformerEncoder):
                 intermediate hidden states (default: False).
             return_all_attn (bool, optional): also return all of the
                 intermediate layers' attention weights (default: False).
+            token_embeddings (torch.Tensor, optional): precomputed embeddings
+                default `None` will recompute embeddings
 
         Returns:
             namedtuple:

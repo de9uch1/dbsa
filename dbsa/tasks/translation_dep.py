@@ -194,7 +194,7 @@ class TranslationDependencyTask(TranslationTask):
                             help='load the dependency heads')
         parser.add_argument('--use-gold-dependency', action='store_true',
                             help='use the source\'s gold dependency for inference')
-        parser.add_argument('--print-dependency', action='store_true',
+        parser.add_argument('--print-dependency', nargs='?', const='hard',
                             help='if set, uses attention feedback to compute and print dependency')
         # fmt: on
 
@@ -249,9 +249,12 @@ class TranslationDependencyTask(TranslationTask):
             SequenceGeneratorWithAttention,
         )
 
-        seq_gen_cls = None
+        extra_gen_cls_kwargs = extra_gen_cls_kwargs or {}
         if getattr(self.args, "print_dependency", False):
             seq_gen_cls = SequenceGeneratorWithAttention
+            extra_gen_cls_kwargs["print_dependency"] = self.args.print_dependency
+            if getattr(self.args, "print_alignment", False):
+                extra_gen_cls_kwargs['print_alignment'] = self.args.print_alignment
         return super().build_generator(
             models,
             args,
