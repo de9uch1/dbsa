@@ -11,7 +11,7 @@
 #+BEGIN_SRC bash
   git clone https://github.com/de9uch1/dbsa.git
   cd dbsa/
-  pip install ./
+  pip install -e ./
 #+END_SRC
 
 ** Training a Transformer + DBSA model on ASPEC-JE
