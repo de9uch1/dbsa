@@ -341,10 +341,3 @@ class LanguagePairDatasetWithDependency(LanguagePairDataset):
                             [[self.tgt_lang_id]]
                             ).expand(bsz, 1).to(src_tokens)
         return res
-
-    def prefetch(self, indices):
-        self.src.prefetch(indices)
-        if self.tgt is not None:
-            self.tgt.prefetch(indices)
-        if self.align_dataset is not None:
-            self.align_dataset.prefetch(indices)

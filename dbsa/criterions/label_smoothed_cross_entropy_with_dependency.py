@@ -101,12 +101,3 @@ class LabelSmoothedCrossEntropyCriterionWithDependency(LabelSmoothedCrossEntropy
         metrics.log_scalar('src_dep_loss', src_dep_loss_sum / sample_size / math.log(2), sample_size, round=3)
         metrics.log_scalar('tgt_dep_loss', tgt_dep_loss_sum / sample_size / math.log(2), sample_size, round=3)
         metrics.log_derived('ppl', lambda meters: utils.get_perplexity(meters['nll_loss'].avg))
-
-    @staticmethod
-    def logging_outputs_can_be_summed() -> bool:
-        """
-        Whether the logging outputs returned by `forward` can be summed
-        across workers prior to calling `reduce_metrics`. Setting this
-        to True will improves distributed training speed.
-        """
-        return True
