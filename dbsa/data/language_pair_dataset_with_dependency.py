@@ -24,6 +24,7 @@ def collate(
     input_feeding=True,
     pad_to_length=None,
     remove_eos_from_source=False,
+    dependency_with_input=False,
     gold_dependency=True,
 ):
     if len(samples) == 0:
@@ -189,7 +190,7 @@ def collate(
             dependency[dependency[:, 0] >= dependency[:, 1], :] + offset
             for dep_idx, offset, tgt_len in zip(sort_order, offsets, tgt_lengths)
             for dependency in [samples[dep_idx]['tgt_dep'].view(-1, 2)]
-            if check_dependency(dependency, tgt_len)
+            if check_dependency(dependency, (tgt_len + 1 if dependency_with_input else tgt_len))
         ]
 
         if len(target_dependency) > 0:
@@ -250,6 +251,7 @@ class LanguagePairDatasetWithDependency(LanguagePairDataset):
         remove_eos_from_source=False, append_eos_to_target=False,
         align_dataset=None,
         src_dep=None, tgt_dep=None,
+        dependency_with_input=False,
         gold_dependency=False,
         constraints=None,
         append_bos=False, eos=None,
@@ -272,6 +274,7 @@ class LanguagePairDatasetWithDependency(LanguagePairDataset):
         )
         self.src_dep = src_dep
         self.tgt_dep = tgt_dep
+        self.dependency_with_input = dependency_with_input
         self.gold_dependency = gold_dependency
 
     def __getitem__(self, index):
@@ -279,7 +282,10 @@ class LanguagePairDatasetWithDependency(LanguagePairDataset):
         if self.src_dep is not None:
             example["src_dep"] = self.src_dep[index]
         if self.tgt_dep is not None:
-            example["tgt_dep"] = self.tgt_dep[index]
+            tgt_dep = self.tgt_dep[index]
+            if self.dependency_with_input:
+                tgt_dep = tgt_dep + 1
+            example["tgt_dep"] = tgt_dep
         return example
 
     def collater(self, samples, pad_to_length=None):
@@ -327,6 +333,7 @@ class LanguagePairDatasetWithDependency(LanguagePairDataset):
             input_feeding=self.input_feeding,
             pad_to_length=pad_to_length,
             remove_eos_from_source=self.remove_eos_from_source,
+            dependency_with_input=self.dependency_with_input,
             gold_dependency=self.gold_dependency,
         )
         if self.src_lang_id is not None or self.tgt_lang_id is not None:

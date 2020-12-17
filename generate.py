@@ -299,7 +299,7 @@ def _main(cfg: DictConfig, output_file):
                         file=output_file,
                     )
 
-                    if cfg.generation.print_alignment == "hard":
+                    if cfg.generation.print_alignment in {"hard", "hard_with_eos"}:
                         print(
                             "A-{}\t{}".format(
                                 sample_id,
@@ -326,7 +326,7 @@ def _main(cfg: DictConfig, output_file):
                             file=output_file,
                         )
 
-                    if cfg.task.print_dependency == "hard":
+                    if cfg.task.print_dependency in {"hard", "hard_with_eos"}:
                         source_dependency = hypo.get('source_dependency', None)
                         target_dependency = hypo.get('target_dependency', None)
                         if source_dependency is not None:

@@ -31,15 +31,18 @@ class SequenceGeneratorWithAttention(SequenceGenerator):
         super().__init__(EnsembleModelWithAttention(models), tgt_dict, **kwargs)
         self.left_pad_target = left_pad_target
 
-        if print_alignment == "hard":
+        if print_alignment in {"hard", "hard_with_eos"}:
             self.extract_alignment = utils.extract_hard_alignment
         elif print_alignment == "soft":
             self.extract_alignment = utils.extract_soft_alignment
 
-        if print_dependency == "hard":
+        if print_dependency in {"hard", "hard_with_eos"}:
             self.extract_dependency = utils.extract_hard_alignment
         elif print_dependency == "soft":
             self.extract_dependency = utils.extract_soft_alignment
+
+        self.alignment_type = print_alignment
+        self.dependency_type = print_dependency
 
     @torch.no_grad()
     def generate(self, models, sample, **kwargs):
@@ -65,20 +68,42 @@ class SequenceGeneratorWithAttention(SequenceGenerator):
             attns = attns_cpu
 
         # Process the attn matrix to extract hard alignments.
-        def extract_alignments(extract, k, attn_q, attn_k, finalized_k):
+        def extract_alignments(extract, k, attn_q, attn_k, finalized_k, with_eos=False):
+            eos = self.pad if with_eos else self.eos
             for i in range(bsz * beam_size):
                 alignment = extract(
-                    attns[k][i], attn_k[i], attn_q[i], self.pad, self.eos
+                    attns[k][i], attn_k[i], attn_q[i], self.pad, eos
                 )
                 finalized[i // beam_size][i % beam_size][finalized_k] = alignment
 
         for k in attns:
             if k == 'align_attn':
-                extract_alignments(self.extract_alignement, k, tgt_tokens, src_tokens, "alignment")
+                extract_alignments(
+                    self.extract_alignement,
+                    k,
+                    tgt_tokens,
+                    src_tokens,
+                    "alignment",
+                    with_eos=(self.alignment_type == "hard_with_eos"),
+                )
             elif k == 'encoder_self_attn':
-                extract_alignments(self.extract_dependency, k, src_tokens, src_tokens, "source_dependency")
+                extract_alignments(
+                    self.extract_dependency,
+                    k,
+                    src_tokens,
+                    src_tokens,
+                    "source_dependency",
+                    with_eos=(self.dependency_type == "hard_with_eos"),
+                )
             elif k == 'decoder_self_attn':
-                extract_alignments(self.extract_dependency, k, tgt_tokens, tgt_tokens, "target_dependency")
+                extract_alignments(
+                    self.extract_dependency,
+                    k,
+                    tgt_tokens,
+                    tgt_tokens,
+                    "target_dependency",
+                    with_eos=(self.dependency_type == "hard_with_eos"),
+                )
 
         return finalized
 

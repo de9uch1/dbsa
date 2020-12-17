@@ -43,6 +43,7 @@ def load_langpair_dataset(
     left_pad_source, left_pad_target, max_source_positions,
     max_target_positions, prepend_bos=False, load_alignments=False,
     load_dependency=False, gold_dependency=False,
+    dependency_with_input=False,
     truncate_source=False, remove_eos_from_source=True, append_source_id=False,
     num_buckets=0,
     shuffle=True,
@@ -155,6 +156,7 @@ def load_langpair_dataset(
         align_dataset=align_dataset, eos=eos,
         src_dep=src_dep,
         tgt_dep=tgt_dep,
+        dependency_with_input=dependency_with_input,
         gold_dependency=gold_dependency,
         num_buckets=num_buckets,
         shuffle=shuffle,
@@ -192,6 +194,8 @@ class TranslationDependencyTask(TranslationTask):
                             help='if set, remove eos from end of source if it\'s present')
         parser.add_argument('--load-dependency', action='store_true',
                             help='load the dependency heads')
+        parser.add_argument('--dependency-with-input', action='store_true',
+                            help='if set, target-side\'s dependencies are based on the inputs')
         parser.add_argument('--use-gold-dependency', action='store_true',
                             help='use the source\'s gold dependency for inference')
         parser.add_argument('--print-dependency', nargs='?', const='hard',
@@ -232,6 +236,7 @@ class TranslationDependencyTask(TranslationTask):
             load_alignments=self.args.load_alignments,
             load_dependency=self.args.load_dependency,
             gold_dependency=getattr(self.args, 'use_gold_dependency', False),
+            dependency_with_input=getattr(self.args, 'dependency_with_input', False),
             truncate_source=self.args.truncate_source,
             num_buckets=self.args.num_batch_buckets,
             shuffle=(split != 'test'),
