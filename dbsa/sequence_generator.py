@@ -79,7 +79,7 @@ class SequenceGeneratorWithAttention(SequenceGenerator):
         for k in attns:
             if k == 'align_attn':
                 extract_alignments(
-                    self.extract_alignement,
+                    self.extract_alignment,
                     k,
                     tgt_tokens,
                     src_tokens,
