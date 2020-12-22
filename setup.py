@@ -20,6 +20,9 @@ setup(
     author='Hiroyuki Deguchi',
     author_email='deguchi@ai.cs.ehime-u.ac.jp',
     license='MIT',
+    entry_points={
+        "console_scripts": ["fairseq-dbsa-generate = generate:cli_main"]
+    },
     packages=[
         'dbsa', 'dbsa.criterions', 'dbsa.data', 'dbsa.models', 'dbsa.modules',
         'dbsa.tasks'
