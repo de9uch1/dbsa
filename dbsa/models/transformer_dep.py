@@ -25,10 +25,11 @@ class TransformerDepModel(TransformerModel):
     NMT (Deguchi et al., 2019)" for more details.
     """
 
-    def __init__(self, encoder, decoder, args):
+    def __init__(self, args, encoder, decoder):
         super().__init__(args, encoder, decoder)
         self.dependency_heads = args.dependency_heads
-        self.dependency_layer = args.dependency_layer
+        self.source_dependency_layer = args.source_dependency_layer
+        self.target_dependency_layer = args.target_dependency_layer
 
     @staticmethod
     def add_args(parser):
@@ -36,6 +37,10 @@ class TransformerDepModel(TransformerModel):
         super(TransformerDepModel, TransformerDepModel).add_args(parser)
         parser.add_argument('--dependency-heads', type=int, metavar='D',
                             help='Number of cross attention heads per layer to supervised with dependency heads')
+        parser.add_argument('--source-dependency-layer', type=int, metavar='D',
+                            help='Encoder layer number which has to be supervised. 0 corresponding to the bottommost layer.')
+        parser.add_argument('--target-dependency-layer', type=int, metavar='D',
+                            help='Decoder layer number which has to be supervised. 0 corresponding to the bottommost layer.')
         parser.add_argument('--dependency-layer', type=int, metavar='D',
                             help='Layer number which has to be supervised. 0 corresponding to the bottommost layer.')
         # fmt: on
@@ -53,26 +58,42 @@ class TransformerDepModel(TransformerModel):
         encoder, decoder = transformer_model.encoder, transformer_model.decoder
         encoder = cls.build_encoder(args, encoder.dictionary, encoder.embed_tokens)
 
-        dep_layer = getattr(args, "dependency_layer", 0)
-        if args.dependency_layer >= 0:
-            encoder.layers[dep_layer] = TransformerDependencyEncoderLayer(args)
-            decoder.layers[dep_layer].self_attn = DependencyBasedSelfAttention(
-                decoder.layers[dep_layer].embed_dim,
+        dependency_layer = getattr(args, "dependency_layer", None)
+
+        assert (
+            dependency_layer is None
+            or (
+                getattr(args, "source_dependency_layer", None) is None
+                and getattr(args, "target_dependency_layer", None) is None
+            )
+        )
+
+        if dependency_layer is not None and dependency_layer >= 0:
+            args.source_dependency_layer = dependency_layer
+            args.target_dependency_layer = dependency_layer
+
+        if args.source_dependency_layer is not None and args.source_dependency_layer >= 0:
+            encoder.layers[args.source_dependency_layer] = TransformerDependencyEncoderLayer(args)
+
+        if args.target_dependency_layer is not None and args.target_dependency_layer >= 0:
+            decoder.layers[args.target_dependency_layer].self_attn = DependencyBasedSelfAttention(
+                decoder.layers[args.target_dependency_layer].embed_dim,
                 args.decoder_attention_heads,
                 dropout=args.attention_dropout,
                 self_attention=True,
-                q_noise=decoder.layers[dep_layer].quant_noise,
-                qn_block_size=decoder.layers[dep_layer].quant_noise_block_size,
+                q_noise=decoder.layers[args.target_dependency_layer].quant_noise,
+                qn_block_size=decoder.layers[args.target_dependency_layer].quant_noise_block_size,
                 dependency_heads=args.dependency_heads,
             )
 
-        return TransformerDepModel(encoder, decoder, args)
+        return TransformerDepModel(args, encoder, decoder)
 
     def forward(self, src_tokens, src_lengths, prev_output_tokens, **kwargs):
         encoder_out = self.encoder(
             src_tokens,
             src_lengths,
             return_all_attn=True,
+            dependency_layer=self.source_dependency_layer,
             src_deps=kwargs.get('src_deps', None),
         )
         decoder_out, decoder_attn = self.decoder(
@@ -83,14 +104,14 @@ class TransformerDepModel(TransformerModel):
         encoder_self_attn = (
             encoder_out
             ['encoder_attn']
-            [self.dependency_layer]
+            [self.source_dependency_layer]
             [:self.dependency_heads]
             .mean(dim=0)
         )
         decoder_self_attn = (
             decoder_attn
             ['self_attn']
-            [self.dependency_layer]
+            [self.target_dependency_layer]
             [:self.dependency_heads]
             .mean(dim=0)
         )
@@ -194,12 +215,22 @@ class TransformerDependencyEncoder(TransformerEncoder):
 @register_model_architecture("transformer_dep", "transformer_dep")
 def transformer_dep(args):
     args.dependency_heads = getattr(args, "dependency_heads", 1)
-    args.dependency_layer = getattr(args, "dependency_layer", 0)
+    if (
+        getattr(args, "dependency_layer", None) is None
+        and getattr(args, "source_dependency_layer", None) is None
+        and getattr(args, "target_dependency_layer", None) is None
+    ):
+      args.dependency_layer = getattr(args, "dependency_layer", 0)
     base_architecture(args)
 
 
 @register_model_architecture("transformer_dep", "transformer_wmt_en_de_big_dep")
 def transformer_wmt_en_de_big_dep(args):
     args.dependency_heads = getattr(args, "dependency_heads", 1)
-    args.dependency_layer = getattr(args, "dependency_layer", 0)
+    if (
+        getattr(args, "dependency_layer", None) is None
+        and getattr(args, "source_dependency_layer", None) is None
+        and getattr(args, "target_dependency_layer", None) is None
+    ):
+        args.dependency_layer = getattr(args, "dependency_layer", 0)
     transformer_wmt_en_de_big(args)
