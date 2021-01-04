@@ -98,6 +98,8 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
         if need_head_weights:
             need_weights = True
 
+        is_tpu = query.device.type == "xla"
+
         tgt_len, bsz, embed_dim = query.size()
         assert embed_dim == self.embed_dim
         assert list(query.size()) == [tgt_len, bsz, embed_dim]
@@ -271,7 +273,7 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
         if key_padding_mask is not None:
             # don't attend to padding symbols
             attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
-            if not self.tpu:
+            if not is_tpu:
                 attn_weights = attn_weights.masked_fill(
                     key_padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
                     float("-inf")
