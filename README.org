@@ -71,7 +71,7 @@
 
 - You can also generate dependencies (BPE level)
 #+BEGIN_SRC bash
-  python ./generate.py \
+  fairseq-dbsa-generate \
       data-bin --gen-subset test \
       --user-dir dbsa/ \
       --task translation_dep \
