@@ -61,10 +61,10 @@ class TransformerDepModel(TransformerModel):
         dependency_layer = getattr(args, "dependency_layer", None)
 
         assert (
-            dependency_layer is None
+            dependency_layer is not None
             or (
-                getattr(args, "source_dependency_layer", None) is None
-                and getattr(args, "target_dependency_layer", None) is None
+                getattr(args, "source_dependency_layer", None) is not None
+                and getattr(args, "target_dependency_layer", None) is not None
             )
         )
 
