@@ -4,4 +4,4 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from . import transformer_dep
+from .transformer_dep import DependencyBasedTransformerModel

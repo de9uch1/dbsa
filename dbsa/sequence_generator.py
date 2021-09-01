@@ -8,7 +8,7 @@ from collections import defaultdict
 import torch
 from fairseq import utils
 from fairseq.data import data_utils
-from fairseq.sequence_generator import SequenceGenerator, EnsembleModel
+from fairseq.sequence_generator import EnsembleModel, SequenceGenerator
 
 
 class SequenceGeneratorWithAttention(SequenceGenerator):
@@ -55,29 +55,27 @@ class SequenceGeneratorWithAttention(SequenceGenerator):
             src_tokens,
             src_lengths,
             prev_output_tokens,
-            tgt_tokens
+            tgt_tokens,
         ) = self._prepare_batch_for_alignment(sample, finalized)
         attns = self.model.forward_attn(src_tokens, src_lengths, prev_output_tokens)
 
         if src_tokens.device != "cpu":
-            src_tokens = src_tokens.to('cpu')
-            tgt_tokens = tgt_tokens.to('cpu')
+            src_tokens = src_tokens.to("cpu")
+            tgt_tokens = tgt_tokens.to("cpu")
             attns_cpu = {}
             for k, attn in attns.items():
-                attns_cpu[k] = [i.float().to('cpu') for i in attn]
+                attns_cpu[k] = [i.float().to("cpu") for i in attn]
             attns = attns_cpu
 
         # Process the attn matrix to extract hard alignments.
         def extract_alignments(extract, k, attn_q, attn_k, finalized_k, with_eos=False):
             eos = self.pad if with_eos else self.eos
             for i in range(bsz * beam_size):
-                alignment = extract(
-                    attns[k][i], attn_k[i], attn_q[i], self.pad, eos
-                )
+                alignment = extract(attns[k][i], attn_k[i], attn_q[i], self.pad, eos)
                 finalized[i // beam_size][i % beam_size][finalized_k] = alignment
 
         for k in attns:
-            if k == 'align_attn':
+            if k == "attn":
                 extract_alignments(
                     self.extract_alignment,
                     k,
@@ -86,7 +84,7 @@ class SequenceGeneratorWithAttention(SequenceGenerator):
                     "alignment",
                     with_eos=(self.alignment_type == "hard_with_eos"),
                 )
-            elif k == 'encoder_self_attn':
+            elif k == "encoder_self_attn":
                 extract_alignments(
                     self.extract_dependency,
                     k,
@@ -95,7 +93,7 @@ class SequenceGeneratorWithAttention(SequenceGenerator):
                     "source_dependency",
                     with_eos=(self.dependency_type == "hard_with_eos"),
                 )
-            elif k == 'decoder_self_attn':
+            elif k == "decoder_self_attn":
                 extract_alignments(
                     self.extract_dependency,
                     k,
@@ -151,12 +149,12 @@ class EnsembleModelWithAttention(EnsembleModel):
         for model in self.models:
             decoder_out = model(src_tokens, src_lengths, prev_output_tokens, **kwargs)
             for k, v in decoder_out[1].items():
-                if "attn" not in k:
-                    continue
-                if avg_attns[k] is None:
-                    avg_attns[k] = v
-                else:
-                    avg_attns[k].add_(v)
+                if "attn" in k and v is not None and len(v) > 0:
+                    attn = v[0]
+                    if avg_attns[k] is None:
+                        avg_attns[k] = attn
+                    else:
+                        avg_attns[k].add_(attn)
         if len(self.models) > 1:
             for k, v in avg_attns.items():
                 avg_attns[k].div_(len(self.models))

@@ -3,234 +3,97 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+from dataclasses import dataclass, field
 from typing import Optional
 
+from dbsa.models.transformer_dep_decoder import DependencyBasedTransformerDecoder
+from dbsa.models.transformer_dep_encoder import DependencyBasedTransformerEncoder
+from fairseq.models import register_model
+from fairseq.models.transformer import TransformerConfig, TransformerModelBase
+from fairseq.models.transformer.transformer_config import (
+    DecoderConfig,
+    EncDecBaseConfig,
+)
 from torch import Tensor
 
-from fairseq.models import register_model, register_model_architecture
-from fairseq.models.transformer import (
-    base_architecture,
-    transformer_wmt_en_de_big,
-    TransformerModel,
-    TransformerEncoder,
-)
 
-from dbsa.modules import DependencyBasedSelfAttention, TransformerDependencyEncoderLayer
+@dataclass
+class DependencyBasedEncDecBaseConfig(EncDecBaseConfig):
+    dependency_layer: int = field(
+        default=0,
+        metadata={
+            "help": "Layer number which has to be supervised. 0 corresponding to the bottommost layer."
+        },
+    )
 
 
-@register_model("transformer_dep")
-class TransformerDepModel(TransformerModel):
+@dataclass
+class DependencyBasedDecoderConfig(DependencyBasedEncDecBaseConfig, DecoderConfig):
+    pass
+
+
+@dataclass
+class DependencyBasedTransformerConfig(TransformerConfig):
+    dependency_heads: int = field(
+        default=1,
+        metadata={
+            "help": "Number of cross attention heads per layer to supervised with dependency heads"
+        },
+    )
+    encoder: DependencyBasedEncDecBaseConfig = DependencyBasedEncDecBaseConfig()
+    decoder: DependencyBasedDecoderConfig = DependencyBasedDecoderConfig()
+
+
+@register_model("transformer_dep", dataclass=DependencyBasedTransformerConfig)
+class DependencyBasedTransformerModel(TransformerModelBase):
     """
     See "Dependency-Based Self-Attention for Transformer
     NMT (Deguchi et al., 2019)" for more details.
     """
 
-    def __init__(self, args, encoder, decoder):
-        super().__init__(args, encoder, decoder)
-        self.dependency_heads = args.dependency_heads
-        self.source_dependency_layer = args.source_dependency_layer
-        self.target_dependency_layer = args.target_dependency_layer
-
-    @staticmethod
-    def add_args(parser):
-        # fmt: off
-        super(TransformerDepModel, TransformerDepModel).add_args(parser)
-        parser.add_argument('--dependency-heads', type=int, metavar='D',
-                            help='Number of cross attention heads per layer to supervised with dependency heads')
-        parser.add_argument('--source-dependency-layer', type=int, metavar='D',
-                            help='Encoder layer number which has to be supervised. 0 corresponding to the bottommost layer.')
-        parser.add_argument('--target-dependency-layer', type=int, metavar='D',
-                            help='Decoder layer number which has to be supervised. 0 corresponding to the bottommost layer.')
-        parser.add_argument('--dependency-layer', type=int, metavar='D',
-                            help='Layer number which has to be supervised. 0 corresponding to the bottommost layer.')
-        # fmt: on
+    def __init__(self, cfg, encoder, decoder):
+        super().__init__(cfg, encoder, decoder)
+        self.dependency_heads = cfg.dependency_heads
+        self.encoder_dependency_layer = cfg.encoder.dependency_layer
+        self.decoder_dependency_layer = cfg.decoder.dependency_layer
 
     @classmethod
-    def build_encoder(cls, args, src_dict, embed_tokens):
-        return TransformerDependencyEncoder(args, src_dict, embed_tokens)
+    def build_encoder(cls, cfg, src_dict, embed_tokens):
+        encoder = DependencyBasedTransformerEncoder(cfg, src_dict, embed_tokens)
+        if cfg.encoder.dependency_layer >= 0:
+            encoder.layers[cfg.encoder.dependency_layer].self_attn.add_biaffine_layer()
+        return encoder
 
     @classmethod
-    def build_model(cls, args, task):
-        # set any default arguments
-        transformer_dep(args)
-
-        transformer_model = TransformerModel.build_model(args, task)
-        encoder, decoder = transformer_model.encoder, transformer_model.decoder
-        encoder = cls.build_encoder(args, encoder.dictionary, encoder.embed_tokens)
-
-        dependency_layer = getattr(args, "dependency_layer", None)
-
-        assert (
-            dependency_layer is not None
-            or (
-                getattr(args, "source_dependency_layer", None) is not None
-                and getattr(args, "target_dependency_layer", None) is not None
-            )
+    def build_decoder(cls, cfg, tgt_dict, embed_tokens):
+        decoder = DependencyBasedTransformerDecoder(
+            cfg,
+            tgt_dict,
+            embed_tokens,
+            no_encoder_attn=cfg.no_cross_attention,
         )
-
-        if dependency_layer is not None and dependency_layer >= 0:
-            args.source_dependency_layer = dependency_layer
-            args.target_dependency_layer = dependency_layer
-
-        if args.source_dependency_layer is not None and args.source_dependency_layer >= 0:
-            encoder.layers[args.source_dependency_layer] = TransformerDependencyEncoderLayer(args)
-
-        if args.target_dependency_layer is not None and args.target_dependency_layer >= 0:
-            decoder.layers[args.target_dependency_layer].self_attn = DependencyBasedSelfAttention(
-                decoder.layers[args.target_dependency_layer].embed_dim,
-                args.decoder_attention_heads,
-                dropout=args.attention_dropout,
-                self_attention=True,
-                q_noise=decoder.layers[args.target_dependency_layer].quant_noise,
-                qn_block_size=decoder.layers[args.target_dependency_layer].quant_noise_block_size,
-                dependency_heads=args.dependency_heads,
-            )
-
-        return TransformerDepModel(args, encoder, decoder)
+        if cfg.decoder.dependency_layer >= 0:
+            decoder.layers[cfg.decoder.dependency_layer].self_attn.add_biaffine_layer()
+        return decoder
 
     def forward(self, src_tokens, src_lengths, prev_output_tokens, **kwargs):
         encoder_out = self.encoder(
             src_tokens,
             src_lengths,
-            return_all_attn=True,
-            dependency_layer=self.source_dependency_layer,
-            src_deps=kwargs.get('src_deps', None),
+            dependency_layer=self.encoder_dependency_layer,
+            dependency_heads=self.dependency_heads,
+            src_deps=kwargs.get("src_deps", None),
         )
         decoder_out, decoder_attn = self.decoder(
             prev_output_tokens,
             encoder_out,
-            return_all_self_attn=True,
+            dependency_layer=self.decoder_dependency_layer,
+            dependency_heads=self.dependency_heads,
         )
-        encoder_self_attn = (
-            encoder_out
-            ['encoder_attn']
-            [self.source_dependency_layer]
-            [:self.dependency_heads]
-            .mean(dim=0)
-        )
-        decoder_self_attn = (
-            decoder_attn
-            ['self_attn']
-            [self.target_dependency_layer]
-            [:self.dependency_heads]
-            .mean(dim=0)
-        )
-        dependency_out = {
-            'encoder_self_attn': encoder_self_attn,
-            'decoder_self_attn': decoder_self_attn,
-        }
-        return decoder_out, dependency_out
-
-
-class TransformerDependencyEncoder(TransformerEncoder):
-    """
-    Transformer encoder consisting of *args.encoder_layers* layers. Each layer
-    is a :class:`TransformerEncoderLayer`.
-
-    Args:
-        args (argparse.Namespace): parsed command-line arguments
-        dictionary (~fairseq.data.Dictionary): encoding dictionary
-        embed_tokens (torch.nn.Embedding): input embedding
-    """
-
-    def forward(
-        self,
-        src_tokens,
-        src_lengths,
-        return_all_hiddens: bool = False,
-        return_all_attn: bool = False,
-        token_embeddings: Optional[Tensor] = None,
-        src_deps: Optional[Tensor] = None,
-        dependency_layer: int = 0,
-    ):
-        """
-        Args:
-            src_tokens (LongTensor): tokens in the source language of shape
-                `(batch, src_len)`
-            src_lengths (torch.LongTensor): lengths of each source sentence of
-                shape `(batch)`
-            return_all_hiddens (bool, optional): also return all of the
-                intermediate hidden states (default: False).
-            return_all_attn (bool, optional): also return all of the
-                intermediate layers' attention weights (default: False).
-            token_embeddings (torch.Tensor, optional): precomputed embeddings
-                default `None` will recompute embeddings
-
-        Returns:
-            namedtuple:
-                - **encoder_out** (Tensor): the last encoder layer's output of
-                  shape `(src_len, batch, embed_dim)`
-                - **encoder_padding_mask** (ByteTensor): the positions of
-                  padding elements of shape `(batch, src_len)`
-                - **encoder_embedding** (Tensor): the (scaled) embedding lookup
-                  of shape `(batch, src_len, embed_dim)`
-                - **encoder_states** (List[Tensor]): all intermediate
-                  hidden states of shape `(src_len, batch, embed_dim)`.
-                  Only populated if *return_all_hiddens* is True.
-                - **encoder_attn** (List[Tensor]): all intermediate
-                  layers' attention weights of shape `(num_heads, batch, src_len, src_len)`.
-                  Only populated if *return_all_attn* is True.
-        """
-        x, encoder_embedding = self.forward_embedding(src_tokens)
-
-        # B x T x C -> T x B x C
-        x = x.transpose(0, 1)
-
-        # compute padding mask
-        encoder_padding_mask = src_tokens.eq(self.padding_idx)
-
-        encoder_states = []
-        encoder_attn = []
-
-        # encoder layers
-        for i, layer in enumerate(self.layers):
-            if i == dependency_layer and src_deps is not None:
-                x, attn = layer(
-                    x, encoder_padding_mask, need_head_weights=return_all_attn,
-                    src_deps=src_deps,
-                )
+        attn = {"encoder_self_attn": encoder_out["encoder_attn"]}
+        for k, v in decoder_attn.items():
+            if k == "self_attn":
+                attn["decoder_self_attn"] = v
             else:
-                x, attn = layer(x, encoder_padding_mask, need_head_weights=return_all_attn)
-            if return_all_hiddens:
-                assert encoder_states is not None
-                encoder_states.append(x)
-            if return_all_attn and attn is not None:
-                assert encoder_attn is not None
-                encoder_attn.append(attn)
-
-        if self.layer_norm is not None:
-            x = self.layer_norm(x)
-
-        return {
-            "encoder_out": [x],  # T x B x C
-            "encoder_padding_mask": [encoder_padding_mask],  # B x T
-            "encoder_embedding": [encoder_embedding],  # B x T x C
-            "encoder_states": encoder_states,  # List[T x B x C]
-            "encoder_attn": encoder_attn,  # List[N x B x T x T]
-            "src_tokens": [],
-            "src_lengths": [],
-        }
-
-
-@register_model_architecture("transformer_dep", "transformer_dep")
-def transformer_dep(args):
-    args.dependency_heads = getattr(args, "dependency_heads", 1)
-    if (
-        getattr(args, "dependency_layer", None) is None
-        and getattr(args, "source_dependency_layer", None) is None
-        and getattr(args, "target_dependency_layer", None) is None
-    ):
-      args.dependency_layer = getattr(args, "dependency_layer", 0)
-    base_architecture(args)
-
-
-@register_model_architecture("transformer_dep", "transformer_wmt_en_de_big_dep")
-def transformer_wmt_en_de_big_dep(args):
-    args.dependency_heads = getattr(args, "dependency_heads", 1)
-    if (
-        getattr(args, "dependency_layer", None) is None
-        and getattr(args, "source_dependency_layer", None) is None
-        and getattr(args, "target_dependency_layer", None) is None
-    ):
-        args.dependency_layer = getattr(args, "dependency_layer", 0)
-    transformer_wmt_en_de_big(args)
+                attn[k] = v
+        return decoder_out, attn

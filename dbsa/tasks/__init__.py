@@ -4,4 +4,4 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from . import translation_dep
+from .translation_dep import TranslationDependencyTask

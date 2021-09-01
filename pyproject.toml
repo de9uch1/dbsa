@@ -1,19 +1,23 @@
 [tool.poetry]
 name = "dbsa"
-version = "0.1.0"
+version = "0.2.0"
 description = "Dependency-Based Self-Attention for Transformer NMT (Deguchi et al., 2019)"
 authors = ["Hiroyuki Deguchi <deguchi@ai.cs.ehime-u.ac.jp>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = "^3.6"
-fairseq = {git = "https://github.com/de9uch1/fairseq.git", branch = "return_self_attn"}
+python = "^3.7"
+fairseq = {git = "https://github.com/pytorch/fairseq.git"}
+nlpack = {git = "https://github.com/de9uch1/nlpack.git"}
+stanza = "^1.2.3"
 
 [tool.poetry.dev-dependencies]
+black = "^21.8b0"
+isort = "^5.9.3"
 
 [tool.poetry.scripts]
 fairseq-dbsa-generate = "generate:cli_main"
 
 [build-system]
-requires = ["poetry>=0.12", "setuptools"]
-build-backend = "poetry.masonry.api"
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

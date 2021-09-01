@@ -4,4 +4,4 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from . import label_smoothed_cross_entropy_with_dependency
+from .label_smoothed_cross_entropy_with_dependency import LabelSmoothedCrossEntropyCriterionWithDependency

@@ -7,13 +7,15 @@ import math
 from typing import Dict, Optional, Tuple
 
 import torch
-from torch import Tensor, nn
 import torch.nn.functional as F
-
 from fairseq import utils
-from fairseq.incremental_decoding_utils import with_incremental_state, FairseqIncrementalState
-
+from fairseq.incremental_decoding_utils import (
+    FairseqIncrementalState,
+    with_incremental_state,
+)
 from fairseq.modules.multihead_attention import MultiheadAttention
+from fairseq.modules.quant_noise import quant_noise
+from torch import Tensor, nn
 
 
 class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
@@ -55,14 +57,20 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
         )
         self.dep_heads = dependency_heads
         self.dep_dim = self.head_dim * self.dep_heads
-        self.weight_biaffine = nn.Parameter(torch.Tensor(self.dep_dim, self.dep_dim))
-        self.bias_biaffine = nn.Parameter(torch.Tensor(self.dep_dim))
-        self.reset_parameters_biaffine()
+        self.biaffine = None
 
-    def reset_parameters_biaffine(self):
-        nn.init.xavier_uniform_(self.weight_biaffine, gain=1 / math.sqrt(2))
-        if self.bias_biaffine is not None:
-            nn.init.constant_(self.bias_biaffine, 0.)
+        self.q_noise = q_noise
+        self.qn_block_size = qn_block_size
+
+    def add_biaffine_layer(self):
+        if self.biaffine is None:
+            self.biaffine = quant_noise(
+                nn.Linear(self.dep_dim, self.dep_dim, bias=True),
+                self.q_noise,
+                self.qn_block_size,
+            )
+            nn.init.xavier_uniform_(self.biaffine.weight, gain=1 / math.sqrt(2))
+            nn.init.constant_(self.biaffine.bias, 0.0)
 
     def forward(
         self,
@@ -75,7 +83,7 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
         static_kv: bool = False,
         attn_mask: Optional[Tensor] = None,
         before_softmax: bool = False,
-        need_head_weights: bool = True,
+        need_head_weights: bool = False,
         gold_dependency: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
@@ -101,8 +109,51 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
         is_tpu = query.device.type == "xla"
 
         tgt_len, bsz, embed_dim = query.size()
-        assert embed_dim == self.embed_dim
+        src_len = tgt_len
+        assert embed_dim == self.embed_dim, f"query dim {embed_dim} != {self.embed_dim}"
         assert list(query.size()) == [tgt_len, bsz, embed_dim]
+        if key is not None:
+            src_len, key_bsz, _ = key.size()
+            if not torch.jit.is_scripting():
+                assert key_bsz == bsz
+                assert value is not None
+                assert src_len, bsz == value.shape[:2]
+
+        if (
+            not self.onnx_trace
+            and not is_tpu  # don't use PyTorch version on TPUs
+            and incremental_state is None
+            and not static_kv
+            # A workaround for quantization to work. Otherwise JIT compilation
+            # treats bias in linear module as method.
+            and not torch.jit.is_scripting()
+            and self.biaffine is None
+            and gold_dependency is None
+        ):
+            assert key is not None and value is not None
+            return F.multi_head_attention_forward(
+                query,
+                key,
+                value,
+                self.embed_dim,
+                self.num_heads,
+                torch.empty([0]),
+                torch.cat((self.q_proj.bias, self.k_proj.bias, self.v_proj.bias)),
+                self.bias_k,
+                self.bias_v,
+                self.add_zero_attn,
+                self.dropout_module.p,
+                self.out_proj.weight,
+                self.out_proj.bias,
+                self.training or self.dropout_module.apply_during_inference,
+                key_padding_mask,
+                need_weights,
+                attn_mask,
+                use_separate_proj_weight=True,
+                q_proj_weight=self.q_proj.weight,
+                k_proj_weight=self.k_proj.weight,
+                v_proj_weight=self.v_proj.weight,
+            )
 
         if incremental_state is not None:
             saved_state = self._get_input_buffer(incremental_state)
@@ -136,15 +187,20 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
             v = self.v_proj(value)
         q *= self.scaling
 
-        # Biaffine operation
-        if gold_dependency is None:
-            q[:, :, :self.dep_dim] = F.linear(q[:, :, :self.dep_dim], self.weight_biaffine)
-            bias_biaffine = F.linear(k[:, :, :self.dep_dim], self.bias_biaffine)
-            bias_biaffine = (
-                bias_biaffine.contiguous()
+        # Bi-affine operation
+        biaffine_bias = None
+        if gold_dependency is None and self.biaffine is not None:
+            q[:, :, : self.dep_dim] = F.linear(
+                q[:, :, : self.dep_dim],
+                weight=self.biaffine.weight,
+            )
+            biaffine_bias = (
+                F.linear(k[:, :, : self.dep_dim], weight=self.biaffine.bias)
+                .contiguous()
                 .view(-1, bsz)
                 .transpose(0, 1)
-                .unsqueeze(1).unsqueeze(2)
+                .unsqueeze(1)
+                .unsqueeze(2)
             )
 
         if self.bias_k is not None:
@@ -193,6 +249,7 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
                 else:
                     assert k is not None
                     k = torch.cat([prev_key, k], dim=1)
+                src_len = k.size(1)
             if "prev_value" in saved_state:
                 _prev_value = saved_state["prev_value"]
                 assert _prev_value is not None
@@ -221,7 +278,7 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
             assert incremental_state is not None
             incremental_state = self._set_input_buffer(incremental_state, saved_state)
         assert k is not None
-        src_len = k.size(1)
+        assert k.size(1) == src_len
 
         # This is part of a workaround to get around fork/join parallelism
         # not supporting Optional types.
@@ -254,10 +311,10 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
 
         attn_weights = torch.bmm(q, k.transpose(1, 2))
 
-        # DBSA's biaffine operation (bias term)
-        if gold_dependency is None:
+        # Bi-affine operation (bias term)
+        if gold_dependency is None and biaffine_bias is not None:
             attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
-            attn_weights[:, :self.dep_heads, :, :] += bias_biaffine
+            attn_weights[:, : self.dep_heads, :, :] += biaffine_bias
             attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
 
         attn_weights = self.apply_sparse_mask(attn_weights, tgt_len, src_len, bsz)
@@ -276,11 +333,11 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
             if not is_tpu:
                 attn_weights = attn_weights.masked_fill(
                     key_padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
-                    float("-inf")
+                    float("-inf"),
                 )
             else:
                 attn_weights = attn_weights.transpose(0, 2)
-                attn_weights = attn_weights.masked_fill(key_padding_mask, float('-inf'))
+                attn_weights = attn_weights.masked_fill(key_padding_mask, float("-inf"))
                 attn_weights = attn_weights.transpose(0, 2)
             attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
 
@@ -299,9 +356,12 @@ class DependencyBasedSelfAttention(MultiheadAttention, FairseqIncrementalState):
                 .contiguous()
                 .view(self.num_heads, bsz * tgt_len, src_len)
             )
-            attn_weights_float[:self.dep_heads] = 0
-            attn_weights_float[:self.dep_heads, gold_dependency[:, 0][:, None], gold_dependency[:, 1][:, None]] = 1
-
+            attn_weights_float[: self.dep_heads] = 0
+            attn_weights_float[
+                : self.dep_heads,
+                gold_dependency[:, 0][:, None],
+                gold_dependency[:, 1][:, None],
+            ] = 1
             attn_weights_float = (
                 attn_weights_float.view(self.num_heads, bsz, tgt_len, src_len)
                 .transpose(0, 1)

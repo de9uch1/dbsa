@@ -82,7 +82,6 @@ def _main(cfg: DictConfig, output_file):
     # Load dataset splits
     task = tasks.setup_task(cfg.task)
 
-
     # Set dictionaries
     try:
         src_dict = getattr(task, "source_dictionary", None)
@@ -317,18 +316,15 @@ def _main(cfg: DictConfig, output_file):
                             "A-{}\t{}".format(
                                 sample_id,
                                 " ".join(
-                                    [
-                                        ",".join(src_probs)
-                                        for src_probs in alignment
-                                    ]
+                                    [",".join(src_probs) for src_probs in alignment]
                                 ),
                             ),
                             file=output_file,
                         )
 
                     if cfg.task.print_dependency in {"hard", "hard_with_eos"}:
-                        source_dependency = hypo.get('source_dependency', None)
-                        target_dependency = hypo.get('target_dependency', None)
+                        source_dependency = hypo.get("source_dependency", None)
+                        target_dependency = hypo.get("target_dependency", None)
                         if source_dependency is not None:
                             print(
                                 "F-{}\t{}".format(
@@ -356,17 +352,14 @@ def _main(cfg: DictConfig, output_file):
                                 file=output_file,
                             )
                     if cfg.task.print_dependency == "soft":
-                        source_dependency = hypo.get('source_dependency', None)
-                        target_dependency = hypo.get('target_dependency', None)
+                        source_dependency = hypo.get("source_dependency", None)
+                        target_dependency = hypo.get("target_dependency", None)
                         if source_dependency is not None:
                             print(
                                 "F-{}\t{}".format(
                                     sample_id,
                                     " ".join(
-                                        [
-                                            ",".join(probs)
-                                            for probs in source_dependency
-                                        ]
+                                        [",".join(probs) for probs in source_dependency]
                                     ),
                                 ),
                                 file=output_file,
@@ -376,10 +369,7 @@ def _main(cfg: DictConfig, output_file):
                                 "E-{}\t{}".format(
                                     sample_id,
                                     " ".join(
-                                        [
-                                            ",".join(probs)
-                                            for probs in target_dependency
-                                        ]
+                                        [",".join(probs) for probs in target_dependency]
                                     ),
                                 ),
                                 file=output_file,
@@ -408,7 +398,10 @@ def _main(cfg: DictConfig, output_file):
 
                 # Score only the top hypothesis
                 if has_target and j == 0:
-                    if align_dict is not None or cfg.common_eval.post_process is not None:
+                    if (
+                        align_dict is not None
+                        or cfg.common_eval.post_process is not None
+                    ):
                         # Convert back to tokens for evaluation with unk replacement and/or without BPE
                         target_tokens = tgt_dict.encode_line(
                             target_str, add_if_not_exist=True
