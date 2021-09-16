@@ -6,7 +6,7 @@ authors = ["Hiroyuki Deguchi <deguchi@ai.cs.ehime-u.ac.jp>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = "^3.8"
 fairseq = {git = "https://github.com/pytorch/fairseq.git"}
 nlpack = {git = "https://github.com/de9uch1/nlpack.git"}
 stanza = "^1.2.3"

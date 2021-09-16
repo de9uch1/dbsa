@@ -154,90 +154,90 @@ cp $ASPEC_JE/devtest/devtest.txt $orig/devtest.txt
 cp $ASPEC_JE/test/test.txt $orig/test.txt
 
 set -e
-# log "Start preprocessing"
-# log "Extracting sentences..."
-# for split in dev devtest test; do
-#     perl -ne 'chomp; @a=split/ \|\|\| /; print $a[2], "\n";' < $orig/$split.txt > $orig/$split.ja
-#     perl -ne 'chomp; @a=split/ \|\|\| /; print $a[3], "\n";' < $orig/$split.txt > $orig/$split.en
-# done
-# for split in train; do
-#     perl -ne 'chomp; @a=split/ \|\|\| /; print $a[3], "\n";' < $orig/$split.txt > $orig/$split.ja
-#     perl -ne 'chomp; @a=split/ \|\|\| /; print $a[4], "\n";' < $orig/$split.txt > $orig/$split.en
-# done
-# log "Done."
+log "Start preprocessing"
+log "Extracting sentences..."
+for split in dev devtest test; do
+    perl -ne 'chomp; @a=split/ \|\|\| /; print $a[2], "\n";' < $orig/$split.txt > $orig/$split.ja
+    perl -ne 'chomp; @a=split/ \|\|\| /; print $a[3], "\n";' < $orig/$split.txt > $orig/$split.en
+done
+for split in train; do
+    perl -ne 'chomp; @a=split/ \|\|\| /; print $a[3], "\n";' < $orig/$split.txt > $orig/$split.ja
+    perl -ne 'chomp; @a=split/ \|\|\| /; print $a[4], "\n";' < $orig/$split.txt > $orig/$split.en
+done
+log "Done."
 
-# log "Removing date expressions at EOS in Japanese in the training and development data to reduce noise..."
-# for split in train dev devtest; do
-#     mv $orig/$split.ja $orig/$split.ja.org
-#     cat $orig/$split.ja.org | perl -C -pe 'use utf8; s/(.)［[０-９．]+］$/$1/;' > $orig/$split.ja
-#     rm $orig/$split.ja.org
-# done
-# log "Done."
+log "Removing date expressions at EOS in Japanese in the training and development data to reduce noise..."
+for split in train dev devtest; do
+    mv $orig/$split.ja $orig/$split.ja.org
+    cat $orig/$split.ja.org | perl -C -pe 'use utf8; s/(.)［[０-９．]+］$/$1/;' > $orig/$split.ja
+    rm $orig/$split.ja.org
+done
+log "Done."
 
-# pushd $orig >/dev/null
-# for l in $src $tgt; do
-#     ln -sf $valid_set.$l valid.$l
-# done
-# popd >/dev/null
+pushd $orig >/dev/null
+for l in $src $tgt; do
+    ln -sf $valid_set.$l valid.$l
+done
+popd >/dev/null
 
-# log "Tokenizing sentences in Japanese..."
-# for split in train valid test; do
-#     cat $orig/$split.ja | \
-#         perl -C -pe 'use utf8; tr/\|[]/｜［］/; ' | \
-#         $PARALLEL_SCRIPT $PARALLEL_ARGS $KYTEA_TOKENIZER | \
-#         tee $tmp/$split.ja.kytea | \
-#         $PARALLEL_SCRIPT $PARALLEL_ARGS $KYTEA_TOKENIZER -in full -out tok | \
-#         perl -C -pe 'use utf8; s/　/ /g;' | \
-#         perl -C -pe 'use utf8; s/^ +//; s/ +$//; s/ +/ /g;' \
-#              > $tmp/$split.ja
-# done
-# log "Done."
+log "Tokenizing sentences in Japanese..."
+for split in train valid test; do
+    cat $orig/$split.ja | \
+        perl -C -pe 'use utf8; tr/\|[]/｜［］/; ' | \
+        $PARALLEL_SCRIPT $PARALLEL_ARGS $KYTEA_TOKENIZER | \
+        tee $tmp/$split.ja.kytea | \
+        $PARALLEL_SCRIPT $PARALLEL_ARGS $KYTEA_TOKENIZER -in full -out tok | \
+        perl -C -pe 'use utf8; s/　/ /g;' | \
+        perl -C -pe 'use utf8; s/^ +//; s/ +$//; s/ +/ /g;' \
+             > $tmp/$split.ja
+done
+log "Done."
 
-# log "Tokenizing sentences in English..."
-# for split in train valid test; do
-#     cat $orig/$split.en | \
-#         nlpack normalizer -t z2h | \
-#         perl -C $NORM_PUNC -l en | \
-#         perl -C $MOSES_TOKENIZER -threads $NUM_WORKERS -l en -a -no-escape 2>/dev/null | \
-#         perl -C -pe 'use utf8; s/^ +//; s/ +$//; s/ +/ /g;' \
-#              > $tmp/$split.en
-# done
-# log "Done."
+log "Tokenizing sentences in English..."
+for split in train valid test; do
+    cat $orig/$split.en | \
+        nlpack normalizer -t z2h | \
+        perl -C $NORM_PUNC -l en | \
+        perl -C $MOSES_TOKENIZER -threads $NUM_WORKERS -l en -a -no-escape 2>/dev/null | \
+        perl -C -pe 'use utf8; s/^ +//; s/ +$//; s/ +/ /g;' \
+             > $tmp/$split.en
+done
+log "Done."
 
-# log "Cleaning the corpus..."
-# nlpack preprocessor parallel-cleaner \
-#        --input-prefix $tmp/train \
-#        --output-prefix $tmp/train.clean \
-#        --src $src --tgt $tgt \
-#        --min-len 1 \
-#        --max-len 100 \
-#        --ratio 2.0 \
-#        --label-suffix ja.kytea 
-# for L in $src $tgt; do
-#     mv $tmp/train.clean.$L $tmp/train.$L
-#     cp $tmp/test.$L $prep/ref.$L
-# done
-# mv $tmp/train.clean.ja.kytea $tmp/train.ja.kytea
-# log "Done."
+log "Cleaning the corpus..."
+nlpack preprocessor parallel-cleaner \
+       --input-prefix $tmp/train \
+       --output-prefix $tmp/train.clean \
+       --src $src --tgt $tgt \
+       --min-len 1 \
+       --max-len 100 \
+       --ratio 2.0 \
+       --label-suffix ja.kytea 
+for L in $src $tgt; do
+    mv $tmp/train.clean.$L $tmp/train.$L
+    cp $tmp/test.$L $prep/ref.$L
+done
+mv $tmp/train.clean.ja.kytea $tmp/train.ja.kytea
+log "Done."
 
-# log "Learn BPE on $tmp/train.$src, $tmp/train.$tgt..."
-# BPE_CODE=$prep/code
-# for l in $src $tgt; do
-#     train=train.$l
-#     $FASTBPE learnbpe $BPE_TOKENS $tmp/$train > $BPE_CODE.$l
-#     $FASTBPE applybpe $tmp/bpe$BPE_TOKENS.$train $tmp/$train $BPE_CODE.$l
-#     $FASTBPE getvocab $tmp/bpe$BPE_TOKENS.$train > $prep/vocab.$l
-# done
-# log "Done."
-# for l in $src $tgt; do
-#     BPE_VOCAB=$prep/vocab.$l
-#     for split in train valid test; do
-#         f=$split.$l
-#         log "Apply BPE to $f..."
-#         $FASTBPE applybpe $prep/$f $tmp/$f $BPE_CODE.$l $prep/vocab.$l
-#     done
-# done
-# log "Done."
+log "Learn BPE on $tmp/train.$src, $tmp/train.$tgt..."
+BPE_CODE=$prep/code
+for l in $src $tgt; do
+    train=train.$l
+    $FASTBPE learnbpe $BPE_TOKENS $tmp/$train > $BPE_CODE.$l
+    $FASTBPE applybpe $tmp/bpe$BPE_TOKENS.$train $tmp/$train $BPE_CODE.$l
+    $FASTBPE getvocab $tmp/bpe$BPE_TOKENS.$train > $prep/vocab.$l
+done
+log "Done."
+for l in $src $tgt; do
+    BPE_VOCAB=$prep/vocab.$l
+    for split in train valid test; do
+        f=$split.$l
+        log "Apply BPE to $f..."
+        $FASTBPE applybpe $prep/$f $tmp/$f $BPE_CODE.$l $prep/vocab.$l
+    done
+done
+log "Done."
 
 # log "Parsing dependency structures in Japanese..."
 # for split in train valid test; do
@@ -258,15 +258,13 @@ set -e
 #     python $BPE_DEP --heads-file $tmp/$f.dep --bpe-file $prep/$f > $prep/$f.dep
 # done
 
+log "Parsing dependency structures in Japanese..."
 for split in train valid test; do
     f=$split.ja
-    if [[ $split != "train" ]]; then
-        cat $tmp/$f | \
-            python $STANZA --depparse -l ja --batch-size 10000 > $tmp/$f.dep
-    fi
+    cat $tmp/$f | \
+        python $STANZA --depparse -l ja --batch-size 10000 > $tmp/$f.dep
     python $BPE_DEP --heads-file $tmp/$f.dep --bpe-file $prep/$f > $prep/$f.dep
 done
-
 log "Done."
 log "Parsing dependency structures in English..."
 for split in train valid test; do
