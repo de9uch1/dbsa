@@ -206,14 +206,14 @@ def collate(
         offsets[:, 0] += torch.arange(len(sort_order), dtype=torch.long) * tgt_sz
         if left_pad_target:
             offsets += (tgt_sz - tgt_lengths)[:, None]
+        if dependency_with_input:
+            offsets += 1
 
         target_dependency = [
             dependency[dependency[:, 0] >= dependency[:, 1], :] + offset
             for dep_idx, offset, tgt_len in zip(sort_order, offsets, tgt_lengths)
             for dependency in [samples[dep_idx]["tgt_dep"].view(-1, 2)]
-            if check_dependency(
-                dependency, (tgt_len + 1 if dependency_with_input else tgt_len)
-            )
+            if check_dependency(dependency, tgt_len)
         ]
 
         if len(target_dependency) > 0:
