@@ -210,7 +210,7 @@ def collate(
             offsets += 1
 
         target_dependency = [
-            dependency[dependency[:, 0] >= dependency[:, 1], :] + offset
+            dependency + offset
             for dep_idx, offset, tgt_len in zip(sort_order, offsets, tgt_lengths)
             for dependency in [samples[dep_idx]["tgt_dep"].view(-1, 2)]
             if check_dependency(dependency, tgt_len)

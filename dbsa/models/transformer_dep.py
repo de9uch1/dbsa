@@ -40,6 +40,13 @@ class DependencyBasedTransformerConfig(TransformerConfig):
             "help": "Number of cross attention heads per layer to supervised with dependency heads"
         },
     )
+    full_context_dependency: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether or not dependency is supervised conditioned on the full target context."
+        },
+    )
+
     encoder: DependencyBasedEncDecBaseConfig = DependencyBasedEncDecBaseConfig()
     decoder: DependencyBasedDecoderConfig = DependencyBasedDecoderConfig()
 
@@ -56,6 +63,7 @@ class DependencyBasedTransformerModel(TransformerModelBase):
         self.dependency_heads = cfg.dependency_heads
         self.encoder_dependency_layer = cfg.encoder.dependency_layer
         self.decoder_dependency_layer = cfg.decoder.dependency_layer
+        self.full_context_dependency = cfg.full_context_dependency
 
     @classmethod
     def build_encoder(cls, cfg, src_dict, embed_tokens):
@@ -84,11 +92,9 @@ class DependencyBasedTransformerModel(TransformerModelBase):
             dependency_heads=self.dependency_heads,
             src_deps=kwargs.get("src_deps", None),
         )
-        decoder_out, decoder_attn = self.decoder(
+        decoder_out, decoder_attn = self.forward_decoder(
             prev_output_tokens,
             encoder_out,
-            dependency_layer=self.decoder_dependency_layer,
-            dependency_heads=self.dependency_heads,
         )
         attn = {"encoder_self_attn": encoder_out["encoder_attn"]}
         for k, v in decoder_attn.items():
@@ -97,3 +103,30 @@ class DependencyBasedTransformerModel(TransformerModelBase):
             else:
                 attn[k] = v
         return decoder_out, attn
+
+    def forward_decoder(
+        self,
+        prev_output_tokens,
+        encoder_out=None,
+        incremental_state=None,
+        features_only=False,
+        **extra_args,
+    ):
+        attn_args = {
+            "dependency_layer": self.dependency_decoder_layer,
+            "dependency_heads": self.dependency_heads,
+        }
+        decoder_out = self.decoder(prev_output_tokens, encoder_out, **attn_args)
+
+        if self.full_context_dependency:
+            attn_args["full_context_alignment"] = self.full_context_dependency
+            _, dependency_out = self.decoder(
+                prev_output_tokens,
+                encoder_out,
+                features_only=True,
+                **attn_args,
+                **extra_args,
+            )
+            decoder_out[1]["self_attn"] = dependency_out["self_attn"]
+
+        return decoder_out

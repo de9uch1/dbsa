@@ -88,7 +88,10 @@ class LabelSmoothedCrossEntropyCriterionWithDependency(
             source_dependency_loss *= sample_size / sample["src_dep"].size(0)
         if "tgt_dep" in sample and sample["tgt_dep"] is not None:
             target_dependency_loss = self.compute_dependency_loss(
-                sample, net_output, target=True
+                sample,
+                net_output,
+                target=True,
+                full_context=getattr(model, "full_context_dependency", False),
             )
             target_dependency_loss *= sample_size / sample["tgt_dep"].size(0)
 
@@ -101,7 +104,9 @@ class LabelSmoothedCrossEntropyCriterionWithDependency(
 
         return loss, sample_size, logging_output
 
-    def compute_dependency_loss(self, sample, net_output, target=False):
+    def compute_dependency_loss(
+        self, sample, net_output, target=False, full_context=False
+    ):
         attn_probs = (
             net_output[1]["decoder_self_attn"][0]
             if target
@@ -111,6 +116,8 @@ class LabelSmoothedCrossEntropyCriterionWithDependency(
         attn = attn_probs.view(bsz * seq_len, seq_len).float()
 
         dep = sample["tgt_dep"] if target else sample["src_dep"]
+        if target and not full_context:
+            dep = dep[dep[:, 0].fmod(seq_len).type_as(dep) >= dep[:, 1], :]
 
         if len(dep) > 0:
             # Dependency loss computation.
