@@ -7,7 +7,7 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-fairseq = {git = "https://github.com/pytorch/fairseq.git"}
+fairseq = {git = "https://github.com/pytorch/fairseq.git", branch = "main"}
 nlpack = {git = "https://github.com/de9uch1/nlpack.git"}
 stanza = "^1.2.3"
 
