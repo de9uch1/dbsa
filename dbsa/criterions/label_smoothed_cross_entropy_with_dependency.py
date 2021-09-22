@@ -81,12 +81,20 @@ class LabelSmoothedCrossEntropyCriterionWithDependency(
         target_dependency_loss = None
 
         # Compute dependency loss only for training set and non dummy batches.
-        if "src_dep" in sample and sample["src_dep"] is not None:
+        if (
+            "src_dep" in sample
+            and sample["src_dep"] is not None
+            and self.source_dependency_lambda > 0.0
+        ):
             source_dependency_loss = self.compute_dependency_loss(
                 sample, net_output, target=False
             )
             source_dependency_loss *= sample_size / sample["src_dep"].size(0)
-        if "tgt_dep" in sample and sample["tgt_dep"] is not None:
+        if (
+            "tgt_dep" in sample
+            and sample["tgt_dep"] is not None
+            and self.target_dependency_lambda > 0.0
+        ):
             target_dependency_loss = self.compute_dependency_loss(
                 sample,
                 net_output,
