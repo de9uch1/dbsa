@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "dbsa"
-version = "0.2.0"
+version = "0.2.2"
 description = "Dependency-Based Self-Attention for Transformer NMT (Deguchi et al., 2019)"
 authors = ["Hiroyuki Deguchi <deguchi@ai.cs.ehime-u.ac.jp>"]
 license = "MIT"
