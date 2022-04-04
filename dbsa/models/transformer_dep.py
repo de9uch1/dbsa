@@ -113,7 +113,7 @@ class DependencyBasedTransformerModel(TransformerModelBase):
         **extra_args,
     ):
         attn_args = {
-            "dependency_layer": self.dependency_decoder_layer,
+            "dependency_layer": self.decoder_dependency_layer,
             "dependency_heads": self.dependency_heads,
         }
         decoder_out = self.decoder(prev_output_tokens, encoder_out, **attn_args)
