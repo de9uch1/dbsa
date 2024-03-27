@@ -12,8 +12,8 @@ nlpack = {git = "https://github.com/de9uch1/nlpack.git"}
 stanza = "^1.2.3"
 
 [tool.poetry.dev-dependencies]
-black = "^21.8b0"
-isort = "^5.9.3"
+black = "^24.3.0"
+isort = "^5.13.2"
 
 [tool.poetry.scripts]
 fairseq-dbsa-generate = "dbsa.cli.generate:cli_main"
